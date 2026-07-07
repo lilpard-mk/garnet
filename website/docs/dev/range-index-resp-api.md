@@ -2828,6 +2828,43 @@ finalizes the stream:
 
 On disposal (error or abort), the deserializer's temp file is deleted.
 
+#### Replicating a migrated key via the AOF (`RangeIndexStreamChunk`)
+
+A migrated RangeIndex carries real data, so its replicas and crash recovery cannot reconstruct
+it from the stub alone (that would yield an empty tree). Instead, `PublishMigratedIndex` streams
+the reassembled BfTree file into the AOF as a sequence of chunked **`RangeIndexStreamChunk`**
+entries (`RangeIndexManager.ReplicateRangeIndexStream`), reusing `RangeIndexChunkedSerializer` for
+framing. Because a BfTree file can exceed a single AOF page, the stream is split into chunks no
+larger than `RangeIndexAofStreamChunkSize` (config option, default
+`DefaultMigrationChunkSize` = 256 KB; validated to be smaller than `AofPageSize` at startup). Each
+chunk is one `RangeIndexStreamChunk` AOF entry keyed by the RI key; `arg1` packs two flags — the
+first chunk of a stream and the final chunk.
+
+`RangeIndexStreamChunk` is a dedicated internal `AofEntryType` (not a `RespCommand`) — it is never
+parsed from the network, is dispatched directly by `AofProcessor` alongside the other store entry
+types, and is routed to `RangeIndexManager.HandleRangeIndexStreamReplay`. On replay (replica
+replication or crash recovery) chunks for a key are fed into a per-key
+`RangeIndexChunkedDeserializer`; once the trailer completes the stream, the handler calls
+`PublishMigratedIndex` to reconstruct and register the tree. Per-key reassembly state makes replay
+resilient to other AOF entries interleaved between a stream's chunks — all chunks for one key hash
+to a single virtual sublog and so arrive in order on one replay task. A stream's **first chunk
+resets any stale per-key reassembly** left by an earlier stream that never completed (e.g. a
+migration that failed mid-stream and was retried), so the retry reassembles cleanly. Any reassembly
+left incomplete at end-of-replay (e.g. a crash mid-stream) is dropped by
+`CleanupIncompleteStreamReassembly`.
+
+> Note: replicas and crash recovery both replay with `recordToAof: false`, so a replica does not
+> re-log the `RangeIndexStreamChunk` stream to its own AOF (Garnet does not support chained
+> replication / replica-of-replica). A replica that joins *after* a migration reconstructs the key
+> from the primary's AOF during its initial sync.
+
+Because the `RangeIndexStreamChunk` stream is the single AOF source of truth for a migrated key, the local
+`RICREATE` RMW that `PublishMigratedIndex` issues is **not** auto-logged to the AOF: it carries
+the `RangeIndexManager.StreamedPublishLogArg` sentinel in `arg1`, which `WriteLogRMW` honors to
+skip the redundant `RICREATE` entry. Logging it would race the stream on replay (an empty-tree
+`RICREATE` would either block the publish via the `KeyExists` gate or clobber the reassembled
+tree).
+
 #### Write protection during migration
 
 RI commands (`RI.SET`, `RI.CREATE`, `RI.DEL`, `RI.GET`, `RI.SCAN`, etc.) are classified as

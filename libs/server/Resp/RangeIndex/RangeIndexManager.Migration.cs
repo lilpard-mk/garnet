@@ -44,6 +44,22 @@ namespace Garnet.server
         public const int DefaultMigrationChunkSize = 256 * 1024;
 
         /// <summary>
+        /// Conservative upper bound on the non-payload bytes of a single
+        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry, used only as a startup estimate
+        /// (default sizing + config validation) where no AOF log exists yet. At run time the exact
+        /// per-key overhead is obtained from the log via <c>GarnetLog.GetMaxAofEntryOverhead</c>, which
+        /// is authoritative. Covers:
+        /// <list type="bullet">
+        /// <item>TsavoriteLog record header + <see cref="AofHeader"/> (or larger sharded header)</item>
+        /// <item>the length-prefixed key</item>
+        /// <item><see cref="StringInput"/> framing (input header + <c>arg1</c> + parse-state prefixes)</item>
+        /// <item>alignment slack</item>
+        /// <item>an allowance for the RI key name</item>
+        /// </list>
+        /// </summary>
+        public const int AofStreamChunkEntryOverhead = 1024;
+
+        /// <summary>
         /// Discover which of the given keys are RangeIndex keys by reading each via
         /// <see cref="RespCommand.RIGET"/> through <see cref="ReadRangeIndex"/> (under a shared lock).
         /// Returns the set of keys that are RangeIndex type. Stub bytes are NOT captured here
@@ -132,7 +148,7 @@ namespace Garnet.server
         /// Publish a migrated RangeIndex key: move the temp file to the working path,
         /// recover the native BfTree, and insert the stub into the store via RICREATE RMW.
         /// </summary>
-        public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx)
+        public unsafe PublishMigratedIndexResult PublishMigratedIndex(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> stubBytes, string tempPath, bool replaceOption, ref StringBasicContext ctx, GarnetAppendOnlyFile appendOnlyFile)
         {
             var keyExists = KeyExists(keyBytes, ref ctx);
             if (keyExists)
@@ -152,7 +168,12 @@ namespace Garnet.server
             {
                 var bftreeDataPath = LogDataPathFor(keyBytes);
 
-                // TODO(RI): Before publishing the migrated index, insert the chunked RI file into AOF to replicate to secondaries.
+                // Replicate the migrated BfTree to secondaries by streaming the snapshot file into
+                // the AOF as chunked range index stream entries. This must happen while tempPath is still
+                // intact (before the move below). On replay, HandleRangeIndexStreamReplay reassembles
+                // the file and re-invokes this method. No-op when AOF is disabled (appendOnlyFile null),
+                // which includes the replica/recovery replay path (recordToAof:false).
+                ReplicateRangeIndexStream(keyBytes, stubBytes, tempPath, appendOnlyFile, ctx.Session.Version, ctx.Session.ID, rangeIndexAofStreamChunkSize);
 
                 // TODO(RI): The KeyExists check above is not race-free. The destination slot is in
                 // IMPORTING state, so a client can still write to this key via -ASK before we publish.
@@ -185,6 +206,10 @@ namespace Garnet.server
                     parseState.InitializeWithArgument(stubSlice);
 
                     var input = new StringInput(RespCommand.RICREATE, ref parseState);
+
+                    // Suppress the auto-AOF-log for this RICREATE: the range index stream enqueued above is
+                    // the single AOF source of truth for this migrated key (see StreamedPublishLogArg).
+                    input.arg1 = StreamedPublishLogArg;
                     var output = new StringOutput();
                     var pinnedKey = PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
                     var status = ctx.RMW((FixedSpanByteKey)pinnedKey, ref input, ref output);

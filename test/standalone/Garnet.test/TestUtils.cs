@@ -593,7 +593,8 @@ namespace Garnet.test
             string clusterAnnounceHostname = null,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            int rangeIndexAofStreamChunkSize = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -661,7 +662,8 @@ namespace Garnet.test
                     clusterAnnounceHostname: clusterAnnounceHostname,
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                    enableRangeIndexPreview: enableRangeIndexPreview);
+                    enableRangeIndexPreview: enableRangeIndexPreview,
+                    rangeIndexAofStreamChunkSize: rangeIndexAofStreamChunkSize);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -745,7 +747,8 @@ namespace Garnet.test
             int vectorSetReplayTaskCount = 0,
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
-            int threadPoolMinIOCompletionThreads = 0)
+            int threadPoolMinIOCompletionThreads = 0,
+            int rangeIndexAofStreamChunkSize = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -880,6 +883,9 @@ namespace Garnet.test
                 opts.LogMemorySize = string.IsNullOrEmpty(memorySize) ? $"{MinKvLogPageSizeInKB * LogSizeTracker.MinTargetPageCount}k" : memorySize;  // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 opts.PageSize = pageSize == default ? $"{MinKvLogPageSize}" : pageSize;
             }
+
+            if (rangeIndexAofStreamChunkSize > 0)
+                opts.RangeIndexAofStreamChunkSize = rangeIndexAofStreamChunkSize;
 
             return opts;
         }

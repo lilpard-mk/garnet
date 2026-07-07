@@ -109,6 +109,12 @@ namespace Garnet.server
         private readonly string cprDir;
 
         /// <summary>
+        /// Max size (bytes) of each <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to
+        /// replicate a migrated index. Chunk + framing overhead must fit in one AOF page.
+        /// </summary>
+        private readonly int rangeIndexAofStreamChunkSize;
+
+        /// <summary>
         /// Global checkpoint barrier. When non-zero, a checkpoint is snapshotting trees.
         /// RI operations check this first (one volatile read on hot path); if set, they
         /// look up by <see cref="KeyId"/> and check the per-tree
@@ -216,13 +222,17 @@ namespace Garnet.server
         /// <c>BfTree.Dispose</c> + file deletion past any in-flight reader observing the
         /// stub's <c>TreeHandle</c>. May be null in unit-test scenarios with no concurrent
         /// readers; in that case disposal is performed synchronously.</param>
+        /// <param name="rangeIndexAofStreamChunkSize">Maximum size (bytes) of each chunked
+        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to replicate a migrated index.</param>
         /// <param name="logger">Optional logger.</param>
         /// <exception cref="ArgumentException">Thrown when <paramref name="riLogRoot"/> is
         /// null or empty.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when
+        /// <paramref name="rangeIndexAofStreamChunkSize"/> is below the minimum supported chunk size.</exception>
         /// <exception cref="IOException">Thrown when the riLogRoot directory cannot be
         /// created (e.g., insufficient permissions). Wraps the underlying exception.</exception>
         public RangeIndexManager(string riLogRoot, string cprDir = null,
-            LightEpoch storeEpoch = null, ILogger logger = null)
+            LightEpoch storeEpoch = null, int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize, ILogger logger = null)
         {
             if (string.IsNullOrEmpty(riLogRoot))
                 throw new ArgumentException(
@@ -232,6 +242,10 @@ namespace Garnet.server
             this.riLogRoot = riLogRoot;
             this.cprDir = cprDir;
             this.storeEpoch = storeEpoch;
+            if (rangeIndexAofStreamChunkSize < RangeIndexChunkedSerializer.MinChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(rangeIndexAofStreamChunkSize), rangeIndexAofStreamChunkSize,
+                    $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
+            this.rangeIndexAofStreamChunkSize = rangeIndexAofStreamChunkSize;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
 
@@ -483,6 +497,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
+            // Drop any in-progress AOF-stream reassembly (e.g. a recovery truncated mid-stream).
+            CleanupIncompleteStreamReassembly();
+
             foreach (var kvp in liveIndexes)
             {
                 try { kvp.Value.Tree?.Dispose(); }

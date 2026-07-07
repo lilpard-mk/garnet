@@ -576,6 +576,21 @@ namespace Garnet.server
         public bool EnableRangeIndexPreview = false;
 
         /// <summary>
+        /// Maximum size in bytes of each chunked range index stream AOF entry used to replicate a
+        /// migrated Range Index (BF-Tree) to secondaries. Chunk + per-entry overhead must fit within a
+        /// single AOF page. <c>null</c> means "unset" — it is resolved in <see cref="GetAofSettings"/> to
+        /// <c>min(<see cref="RangeIndexManager.DefaultMigrationChunkSize"/>, AofPage - overhead)</c>.
+        /// </summary>
+        public int? RangeIndexAofStreamChunkSize = null;
+
+        /// <summary>
+        /// <see cref="RangeIndexAofStreamChunkSize"/> with the unset (null) default resolved to
+        /// <see cref="RangeIndexManager.DefaultMigrationChunkSize"/>. Consumers read this so the
+        /// default lives in the options, not at each call site.
+        /// </summary>
+        public int RangeIndexAofStreamChunkSizeOrDefault => RangeIndexAofStreamChunkSize ?? RangeIndexManager.DefaultMigrationChunkSize;
+
+        /// <summary>
         /// Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count).
         /// </summary>
         public int VectorSetQuantizationTaskCount = 0;
@@ -992,6 +1007,47 @@ namespace Garnet.server
                           $"or reduce --page.";
                 logger?.LogError("{msg}", msg);
                 throw new Exception(msg);
+            }
+
+            // Each range index stream chunk becomes one AOF entry (chunk payload + framing overhead)
+            // and must fit within a single AOF page. Resolve the auto default (sentinel <= 0) to
+            // min(DefaultMigrationChunkSize, AofPage - overhead); validate an explicitly-configured
+            // size against the same page-minus-overhead budget so it can never overflow at runtime.
+            if (EnableRangeIndexPreview)
+            {
+                var aofPageBytes = 1L << pageSizeBits;
+                var maxChunkBytes = aofPageBytes - RangeIndexManager.AofStreamChunkEntryOverhead;
+
+                if (maxChunkBytes < RangeIndexChunkedSerializer.MinChunkSize)
+                {
+                    var effectivePage = PrettySize(aofPageBytes);
+                    var msg = $"AofPageSize (effective {effectivePage} after rounding down to a power of two) is too small " +
+                              $"to hold a range index stream chunk: it must fit at least {PrettySize(RangeIndexChunkedSerializer.MinChunkSize)} " +
+                              $"of payload plus {PrettySize(RangeIndexManager.AofStreamChunkEntryOverhead)} of per-entry overhead. " +
+                              $"Increase --aof-page-size.";
+                    logger?.LogError("{msg}", msg);
+                    throw new Exception(msg);
+                }
+
+                // Resolve the unset default (null) first, clamped to the page budget so the default can
+                // never exceed what fits in one AOF page.
+                if (RangeIndexAofStreamChunkSize is null)
+                    RangeIndexAofStreamChunkSize = (int)Math.Min(RangeIndexManager.DefaultMigrationChunkSize, maxChunkBytes);
+
+                // An explicitly configured size must also fit (chunk + overhead <= AOF page). The
+                // clamped default above always passes this, so only an oversized explicit value errors.
+                var chunkSize = RangeIndexAofStreamChunkSize.Value;
+                if (chunkSize > maxChunkBytes)
+                {
+                    var effectivePage = PrettySize(aofPageBytes);
+                    var msg = $"RangeIndexAofStreamChunkSize ({PrettySize(chunkSize)}) plus per-entry overhead " +
+                              $"({PrettySize(RangeIndexManager.AofStreamChunkEntryOverhead)}) must fit within AofPageSize " +
+                              $"(effective {effectivePage} after rounding down to a power of two), so each range index stream chunk " +
+                              $"fits in one AOF page. Reduce --range-index-aof-stream-chunk-size to at most {PrettySize(maxChunkBytes)}, " +
+                              $"or increase --aof-page-size.";
+                    logger?.LogError("{msg}", msg);
+                    throw new Exception(msg);
+                }
             }
 
             tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];

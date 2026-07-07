@@ -1626,6 +1626,145 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RangeIndexAofStreamChunkSizeValidation()
+        {
+            TsavoriteLogSettings[] logSettings;
+
+            // T9: chunk size >= AofPageSize must throw — each range index stream chunk must fit in one AOF page.
+            var args = new[] { "--aof", "--aof-page-size", "32m", "--aof-memory", "64m", "--page", "1m", "--enable-range-index-preview", "--range-index-aof-stream-chunk-size", "64m" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            var serverOptions = options.GetServerOptions();
+            var ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("RangeIndexAofStreamChunkSize"), $"Expected message to mention RangeIndexAofStreamChunkSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+
+            // A valid small chunk size (< AofPageSize) must parse, apply, and pass validation.
+            args = ["--aof", "--aof-page-size", "32m", "--aof-memory", "64m", "--page", "1m", "--enable-range-index-preview", "--range-index-aof-stream-chunk-size", "64k"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            serverOptions = options.GetServerOptions();
+            ClassicAssert.AreEqual(64 * 1024, serverOptions.RangeIndexAofStreamChunkSize.Value);
+            serverOptions.GetAofSettings(0, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
+
+            // Without range-index preview the chunk size is not validated (no throw even when large).
+            args = ["--aof", "--aof-page-size", "32m", "--aof-memory", "64m", "--page", "1m", "--range-index-aof-stream-chunk-size", "64m"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            serverOptions = options.GetServerOptions();
+            serverOptions.GetAofSettings(0, out logSettings);
+            try
+            {
+                ClassicAssert.AreEqual(1, logSettings.Length);
+            }
+            finally
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void RangeIndexAofStreamChunkSizeDefaultAndOverhead()
+        {
+            const int overhead = RangeIndexManager.AofStreamChunkEntryOverhead;
+
+            // Parse args and return the resulting GarnetServerOptions.
+            static GarnetServerOptions Parse(params string[] args)
+            {
+                var ok = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(ok);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                return options.GetServerOptions();
+            }
+
+            static void DisposeLogSettings(TsavoriteLogSettings[] logSettings)
+            {
+                foreach (var s in logSettings)
+                {
+                    s.LogDevice?.Dispose();
+                    s.LogCommitManager?.Dispose();
+                }
+            }
+
+            // Case 1: unset + preview on. The option is null pre-resolution and OrDefault returns the
+            // 256 KB default; GetAofSettings resolves the field to that default (fits the 32m page).
+            {
+                var serverOptions = Parse("--aof", "--aof-page-size", "32m", "--aof-memory", "64m", "--page", "1m", "--enable-range-index-preview");
+                ClassicAssert.IsNull(serverOptions.RangeIndexAofStreamChunkSize);
+                ClassicAssert.AreEqual(RangeIndexManager.DefaultMigrationChunkSize, serverOptions.RangeIndexAofStreamChunkSizeOrDefault);
+
+                serverOptions.GetAofSettings(0, out var logSettings);
+                try
+                {
+                    ClassicAssert.AreEqual(RangeIndexManager.DefaultMigrationChunkSize, serverOptions.RangeIndexAofStreamChunkSize.Value);
+                }
+                finally
+                {
+                    DisposeLogSettings(logSettings);
+                }
+            }
+
+            // Case 2: overhead boundary. Chunk is smaller than the AOF page but chunk + overhead
+            // exceeds it, so it must still throw (the old chunk < page check would have passed).
+            {
+                const int page = 1 << 20; // 1m
+                var chunk = page - (overhead / 2); // < page, but chunk + overhead > page
+                ClassicAssert.Less(chunk, page);
+                ClassicAssert.Greater(chunk + overhead, page);
+
+                var serverOptions = Parse("--aof", "--aof-page-size", "1m", "--aof-memory", "4m", "--page", "256k", "--enable-range-index-preview", "--range-index-aof-stream-chunk-size", chunk.ToString());
+                var ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
+                ClassicAssert.IsTrue(ex.Message.Contains("RangeIndexAofStreamChunkSize"), $"Expected message to mention RangeIndexAofStreamChunkSize, got: {ex.Message}");
+                ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+            }
+
+            // Case 3: unset + small page. The 256 KB default does not fit, so GetAofSettings clamps the
+            // resolved value down to (page - overhead) instead of erroring.
+            {
+                const int page = 1 << 17; // 128k
+                var serverOptions = Parse("--aof", "--aof-page-size", "128k", "--aof-memory", "512k", "--page", "64k", "--enable-range-index-preview");
+                ClassicAssert.IsNull(serverOptions.RangeIndexAofStreamChunkSize);
+
+                serverOptions.GetAofSettings(0, out var logSettings);
+                try
+                {
+                    ClassicAssert.AreEqual(page - overhead, serverOptions.RangeIndexAofStreamChunkSize.Value);
+                }
+                finally
+                {
+                    DisposeLogSettings(logSettings);
+                }
+            }
+
+            // Case 4: AOF page too small to hold even MinChunkSize + overhead. Throws before any
+            // chunk-size resolution.
+            {
+                var serverOptions = Parse("--aof", "--aof-page-size", "1k", "--aof-memory", "2k", "--page", "512", "--enable-range-index-preview");
+                var ex = Assert.Throws<Exception>(() => serverOptions.GetAofSettings(0, out _));
+                ClassicAssert.IsTrue(ex.Message.Contains("too small"), $"Expected message to mention 'too small', got: {ex.Message}");
+                ClassicAssert.IsTrue(ex.Message.Contains("AofPageSize"), $"Expected message to mention AofPageSize, got: {ex.Message}");
+            }
+        }
+
+        [Test]
         public void MaxInlineValueSizeParsing()
         {
             // Default value from defaults.conf is null (computed based on page size at runtime)

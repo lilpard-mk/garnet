@@ -78,11 +78,7 @@ namespace Garnet.server
         /// <exception cref="ArgumentException">Thrown if <paramref name="destination"/> is smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</exception>
         public async ValueTask<int> ReadNextChunkAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
         {
-            // The destination is the buffer the serializer frames into, so it must be able to hold
-            // the largest single-chunk element (the trailer). A destination below this could never
-            // frame the trailer and the stream would never complete.
-            if (destination.Length < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new ArgumentException($"destination must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes (the trailer size) so the stream can complete.", nameof(destination));
+            ValidateDestination(destination.Length);
 
             var initialLength = destination.Length;
             while (!serializer.IsComplete && destination.Length > 0)
@@ -91,10 +87,7 @@ namespace Garnet.server
                 if (serializer.NeedsFileData)
                 {
                     var bytesRead = await fileStream.ReadAsync(readBuffer, cancellationToken).ConfigureAwait(false);
-                    if (bytesRead == 0)
-                        throw new Exception($"RangeIndex file truncated: {serializer.FileDataRemaining} bytes remaining");
-
-                    serializer.SupplyFileData(readBuffer[..bytesRead]);
+                    SupplyFileDataOrThrow(bytesRead);
                 }
 
                 var written = serializer.MoveNext(destination.Span);
@@ -108,6 +101,53 @@ namespace Garnet.server
             }
 
             return initialLength - destination.Length;
+        }
+
+        /// <summary>
+        /// Synchronous counterpart to <see cref="ReadNextChunkAsync"/> for callers that are not on an
+        /// async path (e.g. AOF replication of a migrated index during publish/replay). Shares the
+        /// serializer-framing logic; only the file read is synchronous.
+        /// </summary>
+        /// <param name="destination">Output buffer. Must be at least <see cref="RangeIndexChunkedSerializer.MinChunkSize"/> bytes.</param>
+        /// <returns>Number of bytes written to <paramref name="destination"/> (always positive while the stream is incomplete).</returns>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="destination"/> is smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</exception>
+        public int ReadNextChunk(Span<byte> destination)
+        {
+            ValidateDestination(destination.Length);
+
+            var initialLength = destination.Length;
+            while (!serializer.IsComplete && destination.Length > 0)
+            {
+                if (serializer.NeedsFileData)
+                {
+                    var bytesRead = fileStream.Read(readBuffer.Span);
+                    SupplyFileDataOrThrow(bytesRead);
+                }
+
+                var written = serializer.MoveNext(destination);
+                if (written == 0)
+                    break;
+
+                destination = destination[written..];
+            }
+
+            return initialLength - destination.Length;
+        }
+
+        // The destination is the buffer the serializer frames into, so it must be able to hold the
+        // largest single-chunk element (the trailer). A destination below this could never frame the
+        // trailer and the stream would never complete.
+        private static void ValidateDestination(int length)
+        {
+            if (length < RangeIndexChunkedSerializer.MinChunkSize)
+                throw new ArgumentException($"destination must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes (the trailer size) so the stream can complete.", nameof(length));
+        }
+
+        private void SupplyFileDataOrThrow(int bytesRead)
+        {
+            if (bytesRead == 0)
+                throw new Exception($"RangeIndex file truncated: {serializer.FileDataRemaining} bytes remaining");
+            serializer.SupplyFileData(readBuffer[..bytesRead]);
         }
 
         /// <inheritdoc/>

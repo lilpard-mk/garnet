@@ -333,7 +333,8 @@ namespace Garnet.test.cluster
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            int rangeIndexAofStreamChunkSize = 0)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -393,7 +394,8 @@ namespace Garnet.test.cluster
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                enableRangeIndexPreview: enableRangeIndexPreview);
+                enableRangeIndexPreview: enableRangeIndexPreview,
+                rangeIndexAofStreamChunkSize: rangeIndexAofStreamChunkSize);
 
             foreach (var node in nodes)
                 node.Start();
@@ -462,7 +464,8 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false)
+            bool enableRangeIndexPreview = false,
+            int rangeIndexAofStreamChunkSize = 0)
         {
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
@@ -499,7 +502,8 @@ namespace Garnet.test.cluster
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
-                vectorSetQuantizationTaskCount: vectorSetQuantizationTaskCount);
+                vectorSetQuantizationTaskCount: vectorSetQuantizationTaskCount,
+                rangeIndexAofStreamChunkSize: rangeIndexAofStreamChunkSize);
 
             return new GarnetServer(opts, loggerFactory);
         }
