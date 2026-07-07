@@ -163,6 +163,7 @@ pub unsafe extern "C" fn bftree_insert(
     if tree.is_null() || key.is_null() || value.is_null() || key_len < 0 || value_len < 0 {
         return INSERT_INVALID_KV;
     }
+
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     let value = slice::from_raw_parts(value, value_len as usize);
@@ -195,6 +196,7 @@ pub unsafe extern "C" fn bftree_read(
     if tree.is_null() || key.is_null() || key_len < 0 || out_buffer.is_null() || out_buffer_len < 0 {
         return READ_INVALID_KEY;
     }
+
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     let buffer = slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize);
@@ -224,6 +226,7 @@ pub unsafe extern "C" fn bftree_delete(
     if tree.is_null() || key.is_null() || key_len < 0 {
         return;
     }
+
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     tree.delete(key);
@@ -262,6 +265,7 @@ pub unsafe extern "C" fn bftree_scan_with_count(
     if tree.is_null() || start_key.is_null() || start_key_len < 0 || count < 0 {
         return std::ptr::null_mut();
     }
+
     let tree = &*tree;
     let start = slice::from_raw_parts(start_key, start_key_len as usize);
     let rf = match return_field {
@@ -294,6 +298,7 @@ pub unsafe extern "C" fn bftree_scan_with_end_key(
     if tree.is_null() || start_key.is_null() || start_key_len < 0 || end_key.is_null() || end_key_len < 0 {
         return std::ptr::null_mut();
     }
+
     let tree = &*tree;
     let start = slice::from_raw_parts(start_key, start_key_len as usize);
     let end = slice::from_raw_parts(end_key, end_key_len as usize);
@@ -336,6 +341,7 @@ pub unsafe extern "C" fn bftree_scan_next(
     if handle.is_null() || out_buffer.is_null() || out_buffer_len < 0 {
         return 0;
     }
+
     let handle = &mut *handle;
     let buffer = slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize);
     match handle.iter.next(buffer) {
