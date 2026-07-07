@@ -160,6 +160,9 @@ pub unsafe extern "C" fn bftree_insert(
     value: *const u8,
     value_len: i32,
 ) -> i32 {
+    if tree.is_null() || key.is_null() || value.is_null() || key_len < 0 || value_len < 0 {
+        return INSERT_INVALID_KV;
+    }
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     let value = slice::from_raw_parts(value, value_len as usize);
@@ -189,6 +192,9 @@ pub unsafe extern "C" fn bftree_read(
     out_buffer_len: i32,
     out_value_len: *mut i32,
 ) -> i32 {
+    if tree.is_null() || key.is_null() || key_len < 0 || out_buffer.is_null() || out_buffer_len < 0 {
+        return READ_INVALID_KEY;
+    }
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     let buffer = slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize);
@@ -215,6 +221,9 @@ pub unsafe extern "C" fn bftree_delete(
     key: *const u8,
     key_len: i32,
 ) {
+    if tree.is_null() || key.is_null() || key_len < 0 {
+        return;
+    }
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     tree.delete(key);
@@ -250,6 +259,9 @@ pub unsafe extern "C" fn bftree_scan_with_count(
     count: i32,
     return_field: u8,
 ) -> *mut ScanHandle<'static> {
+    if tree.is_null() || start_key.is_null() || start_key_len < 0 || count < 0 {
+        return std::ptr::null_mut();
+    }
     let tree = &*tree;
     let start = slice::from_raw_parts(start_key, start_key_len as usize);
     let rf = match return_field {
@@ -279,6 +291,9 @@ pub unsafe extern "C" fn bftree_scan_with_end_key(
     end_key_len: i32,
     return_field: u8,
 ) -> *mut ScanHandle<'static> {
+    if tree.is_null() || start_key.is_null() || start_key_len < 0 || end_key.is_null() || end_key_len < 0 {
+        return std::ptr::null_mut();
+    }
     let tree = &*tree;
     let start = slice::from_raw_parts(start_key, start_key_len as usize);
     let end = slice::from_raw_parts(end_key, end_key_len as usize);
@@ -318,6 +333,9 @@ pub unsafe extern "C" fn bftree_scan_next(
     out_key_len: *mut i32,
     out_value_len: *mut i32,
 ) -> i32 {
+    if handle.is_null() || out_buffer.is_null() || out_buffer_len < 0 {
+        return 0;
+    }
     let handle = &mut *handle;
     let buffer = slice::from_raw_parts_mut(out_buffer, out_buffer_len as usize);
     match handle.iter.next(buffer) {
@@ -471,4 +489,115 @@ pub unsafe extern "C" fn bftree_noop(
     _key_len: i32,
 ) -> i32 {
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a memory-backed (cache_only) tree for negative-length guard tests.
+    unsafe fn make_memory_tree() -> *mut BfTree {
+        let tree = bftree_create(
+            0, 0, 0, 0, 0,
+            STORAGE_MEMORY,
+            std::ptr::null(), 0,
+            std::ptr::null(), 0,
+        );
+        assert!(!tree.is_null(), "failed to create memory-backed tree");
+        tree
+    }
+
+    #[test]
+    fn negative_key_length_insert_is_rejected() {
+        unsafe {
+            let tree = make_memory_tree();
+            let value = [1u8, 2, 3];
+            let rc = bftree_insert(tree, std::ptr::null(), -1, value.as_ptr(), value.len() as i32);
+            assert_eq!(rc, INSERT_INVALID_KV);
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_value_length_insert_is_rejected() {
+        unsafe {
+            let tree = make_memory_tree();
+            let key = [1u8, 2, 3];
+            let rc = bftree_insert(tree, key.as_ptr(), key.len() as i32, std::ptr::null(), -1);
+            assert_eq!(rc, INSERT_INVALID_KV);
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_key_length_read_is_rejected() {
+        unsafe {
+            let tree = make_memory_tree();
+            let mut buffer = [0u8; 16];
+            let mut out_len = 0i32;
+            let rc = bftree_read(tree, std::ptr::null(), -1, buffer.as_mut_ptr(), buffer.len() as i32, &mut out_len);
+            assert_eq!(rc, READ_INVALID_KEY);
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_buffer_length_read_is_rejected() {
+        unsafe {
+            let tree = make_memory_tree();
+            let key = [1u8, 2, 3];
+            let mut out_len = 0i32;
+            let rc = bftree_read(tree, key.as_ptr(), key.len() as i32, std::ptr::null_mut(), -1, &mut out_len);
+            assert_eq!(rc, READ_INVALID_KEY);
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_key_length_delete_does_not_abort() {
+        unsafe {
+            let tree = make_memory_tree();
+            // Must return without invoking slice::from_raw_parts on a negative length.
+            bftree_delete(tree, std::ptr::null(), -1);
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_length_scan_with_count_returns_null() {
+        unsafe {
+            let tree = make_memory_tree();
+            let start = [0u8];
+            let handle = bftree_scan_with_count(tree, start.as_ptr(), -1, 10, 2);
+            assert!(handle.is_null());
+            let handle = bftree_scan_with_count(tree, start.as_ptr(), start.len() as i32, -1, 2);
+            assert!(handle.is_null());
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_length_scan_with_end_key_returns_null() {
+        unsafe {
+            let tree = make_memory_tree();
+            let start = [0u8];
+            let end = [0xffu8];
+            let handle = bftree_scan_with_end_key(tree, start.as_ptr(), -1, end.as_ptr(), end.len() as i32, 2);
+            assert!(handle.is_null());
+            let handle = bftree_scan_with_end_key(tree, start.as_ptr(), start.len() as i32, end.as_ptr(), -1, 2);
+            assert!(handle.is_null());
+            bftree_drop(tree);
+        }
+    }
+
+    #[test]
+    fn negative_buffer_length_scan_next_returns_zero() {
+        unsafe {
+            let mut out_key = 0i32;
+            let mut out_value = 0i32;
+            // A null handle combined with a negative buffer length must be rejected up front.
+            let rc = bftree_scan_next(std::ptr::null_mut(), std::ptr::null_mut(), -1, &mut out_key, &mut out_value);
+            assert_eq!(rc, 0);
+        }
+    }
 }
