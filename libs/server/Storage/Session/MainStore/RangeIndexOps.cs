@@ -411,7 +411,13 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                BfTreeService.DeleteByPtr(treePtr, field);
+                var deleteResult = BfTreeService.DeleteByPtr(treePtr, field);
+                if (deleteResult != BfTreeDeleteResult.Success)
+                {
+                    result = RangeIndexResult.Error;
+                    return GarnetStatus.OK;
+                }
+
                 result = RangeIndexResult.OK;
 
                 functionsState.rangeIndexManager.ReplicateRangeIndexDel(
