@@ -50,7 +50,8 @@ namespace Garnet.server.BfTreeInterop
         // ---------------------------------------------------------------
 
         /// <summary>
-        /// Insert a key-value pair. Returns 0 on success, 1 on invalid KV.
+        /// Insert a key-value pair. Returns 0 on success, 1 on invalid KV (size limits),
+        /// -1 on invalid arguments (null pointer or negative length).
         /// </summary>
         [LibraryImport(LibName)]
         internal static partial int bftree_insert(
@@ -60,7 +61,8 @@ namespace Garnet.server.BfTreeInterop
 
         /// <summary>
         /// Read the value for a key into out_buffer.
-        /// Returns 0 (found), -1 (not found), -2 (deleted), -3 (invalid key).
+        /// Returns 0 (found), -1 (not found), -2 (deleted), -3 (invalid key),
+        /// -4 (invalid arguments: null pointer or negative length).
         /// On success, out_value_len is set to the number of bytes written.
         /// </summary>
         [LibraryImport(LibName)]
@@ -71,7 +73,8 @@ namespace Garnet.server.BfTreeInterop
             int* out_value_len);
 
         /// <summary>
-        /// Delete a key from the tree. Returns 0 on success, -1 on invalid key.
+        /// Delete a key from the tree. Returns 0 on success, -1 on invalid arguments
+        /// (null pointer or negative length).
         /// </summary>
         [LibraryImport(LibName)]
         internal static partial int bftree_delete(

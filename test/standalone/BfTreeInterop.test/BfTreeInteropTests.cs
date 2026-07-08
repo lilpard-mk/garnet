@@ -585,7 +585,7 @@ namespace BfTreeInterop.test
         // ---------------------------------------------------------------
 
         [Test]
-        public unsafe void Insert_NegativeKeyLength_ReturnsInvalidKV()
+        public unsafe void Insert_NegativeKeyLength_ReturnsInvalidArguments()
         {
             var keyBytes = "k"u8.ToArray();
             var valueBytes = "v"u8.ToArray();
@@ -594,7 +594,7 @@ namespace BfTreeInterop.test
             {
                 var key = PinnedSpanByte.FromPinnedPointer(kp, -1);
                 var value = PinnedSpanByte.FromPinnedPointer(vp, valueBytes.Length);
-                Assert.That(_tree.Insert(key, value), Is.EqualTo(BfTreeInsertResult.InvalidKV));
+                Assert.That(_tree.Insert(key, value), Is.EqualTo(BfTreeInsertResult.InvalidArguments));
             }
 
             // Tree must still be functional after rejecting the invalid input.
@@ -602,7 +602,7 @@ namespace BfTreeInterop.test
         }
 
         [Test]
-        public unsafe void Insert_NegativeValueLength_ReturnsInvalidKV()
+        public unsafe void Insert_NegativeValueLength_ReturnsInvalidArguments()
         {
             var keyBytes = "k"u8.ToArray();
             var valueBytes = "v"u8.ToArray();
@@ -611,12 +611,12 @@ namespace BfTreeInterop.test
             {
                 var key = PinnedSpanByte.FromPinnedPointer(kp, keyBytes.Length);
                 var value = PinnedSpanByte.FromPinnedPointer(vp, -1);
-                Assert.That(_tree.Insert(key, value), Is.EqualTo(BfTreeInsertResult.InvalidKV));
+                Assert.That(_tree.Insert(key, value), Is.EqualTo(BfTreeInsertResult.InvalidArguments));
             }
         }
 
         [Test]
-        public unsafe void Read_NegativeKeyLength_ReturnsInvalidKey()
+        public unsafe void Read_NegativeKeyLength_ReturnsInvalidArguments()
         {
             var keyBytes = "k"u8.ToArray();
             Span<byte> outputBuffer = stackalloc byte[16];
@@ -625,13 +625,13 @@ namespace BfTreeInterop.test
             {
                 var key = PinnedSpanByte.FromPinnedPointer(kp, -1);
                 var result = _tree.Read(key, op, outputBuffer.Length, out var bytesWritten);
-                Assert.That(result, Is.EqualTo(BfTreeReadResult.InvalidKey));
+                Assert.That(result, Is.EqualTo(BfTreeReadResult.InvalidArguments));
                 Assert.That(bytesWritten, Is.EqualTo(0));
             }
         }
 
         [Test]
-        public unsafe void Read_NegativeOutputBufferLength_ReturnsInvalidKey()
+        public unsafe void Read_NegativeOutputBufferLength_ReturnsInvalidArguments()
         {
             var keyBytes = "k"u8.ToArray();
             Span<byte> outputBuffer = stackalloc byte[16];
@@ -640,7 +640,7 @@ namespace BfTreeInterop.test
             {
                 var key = PinnedSpanByte.FromPinnedPointer(kp, keyBytes.Length);
                 var result = _tree.Read(key, op, -1, out var bytesWritten);
-                Assert.That(result, Is.EqualTo(BfTreeReadResult.InvalidKey));
+                Assert.That(result, Is.EqualTo(BfTreeReadResult.InvalidArguments));
                 Assert.That(bytesWritten, Is.EqualTo(0));
             }
         }
@@ -654,7 +654,7 @@ namespace BfTreeInterop.test
             fixed (byte* kp = keyBytes)
             {
                 var key = PinnedSpanByte.FromPinnedPointer(kp, -1);
-                Assert.That(_tree.Delete(key), Is.EqualTo(BfTreeDeleteResult.InvalidKey));
+                Assert.That(_tree.Delete(key), Is.EqualTo(BfTreeDeleteResult.InvalidArguments));
             }
 
             // The pre-existing key must be untouched by the rejected delete.

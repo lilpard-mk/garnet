@@ -23,6 +23,8 @@ namespace Garnet.server.BfTreeInterop
         Deleted = -2,
         /// <summary>The key is invalid (e.g. too long).</summary>
         InvalidKey = -3,
+        /// <summary>Invalid arguments (null pointer or negative length). Indicates a caller bug.</summary>
+        InvalidArguments = -4,
     }
 
     /// <summary>
@@ -34,6 +36,8 @@ namespace Garnet.server.BfTreeInterop
         Success = 0,
         /// <summary>Key or value is invalid (e.g. exceeds configured limits).</summary>
         InvalidKV = 1,
+        /// <summary>Invalid arguments (null pointer or negative length). Indicates a caller bug.</summary>
+        InvalidArguments = -1,
     }
 
     /// <summary>
@@ -43,8 +47,8 @@ namespace Garnet.server.BfTreeInterop
     {
         /// <summary>Delete succeeded.</summary>
         Success = 0,
-        /// <summary>The key is invalid (null pointer or negative length).</summary>
-        InvalidKey = -1,
+        /// <summary>Invalid arguments (null pointer or negative length). Indicates a caller bug.</summary>
+        InvalidArguments = -1,
     }
 
     /// <summary>

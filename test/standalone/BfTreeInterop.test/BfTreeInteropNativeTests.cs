@@ -19,9 +19,9 @@ namespace BfTreeInterop.test
         private const byte StorageMemory = 1;
 
         // Native result codes (mirror the Rust constants in lib.rs).
-        private const int InsertInvalidKv = 1;
-        private const int ReadInvalidKey = -3;
-        private const int DeleteInvalidKey = -1;
+        private const int InsertInvalidArgs = -1;
+        private const int ReadInvalidArgs = -4;
+        private const int DeleteInvalidArgs = -1;
 
         private nint _tree;
 
@@ -41,60 +41,60 @@ namespace BfTreeInterop.test
         }
 
         [Test]
-        public void Insert_NegativeKeyLen_ReturnsInvalidKv()
+        public void Insert_NegativeKeyLen_ReturnsInvalidArgs()
         {
             byte value = 0;
             var rc = NativeBfTreeMethods.bftree_insert(_tree, null, -1, &value, 1);
-            Assert.That(rc, Is.EqualTo(InsertInvalidKv));
+            Assert.That(rc, Is.EqualTo(InsertInvalidArgs));
         }
 
         [Test]
-        public void Insert_NegativeValueLen_ReturnsInvalidKv()
+        public void Insert_NegativeValueLen_ReturnsInvalidArgs()
         {
             byte key = 0;
             var rc = NativeBfTreeMethods.bftree_insert(_tree, &key, 1, null, -1);
-            Assert.That(rc, Is.EqualTo(InsertInvalidKv));
+            Assert.That(rc, Is.EqualTo(InsertInvalidArgs));
         }
 
         [Test]
-        public void Insert_NullTree_ReturnsInvalidKv()
+        public void Insert_NullTree_ReturnsInvalidArgs()
         {
             byte key = 0, value = 0;
             var rc = NativeBfTreeMethods.bftree_insert(nint.Zero, &key, 1, &value, 1);
-            Assert.That(rc, Is.EqualTo(InsertInvalidKv));
+            Assert.That(rc, Is.EqualTo(InsertInvalidArgs));
         }
 
         [Test]
-        public void Read_NegativeKeyLen_ReturnsInvalidKey()
+        public void Read_NegativeKeyLen_ReturnsInvalidArgs()
         {
             byte* outBuffer = stackalloc byte[16];
             int outLen = 0;
             var rc = NativeBfTreeMethods.bftree_read(_tree, null, -1, outBuffer, 16, &outLen);
-            Assert.That(rc, Is.EqualTo(ReadInvalidKey));
+            Assert.That(rc, Is.EqualTo(ReadInvalidArgs));
         }
 
         [Test]
-        public void Read_NegativeOutBufferLen_ReturnsInvalidKey()
+        public void Read_NegativeOutBufferLen_ReturnsInvalidArgs()
         {
             byte key = 0;
             int outLen = 0;
             var rc = NativeBfTreeMethods.bftree_read(_tree, &key, 1, null, -1, &outLen);
-            Assert.That(rc, Is.EqualTo(ReadInvalidKey));
+            Assert.That(rc, Is.EqualTo(ReadInvalidArgs));
         }
 
         [Test]
-        public void Delete_NegativeKeyLen_ReturnsInvalidKey()
+        public void Delete_NegativeKeyLen_ReturnsInvalidArgs()
         {
             var rc = NativeBfTreeMethods.bftree_delete(_tree, null, -1);
-            Assert.That(rc, Is.EqualTo(DeleteInvalidKey));
+            Assert.That(rc, Is.EqualTo(DeleteInvalidArgs));
         }
 
         [Test]
-        public void Delete_NullTree_ReturnsInvalidKey()
+        public void Delete_NullTree_ReturnsInvalidArgs()
         {
             byte key = 0;
             var rc = NativeBfTreeMethods.bftree_delete(nint.Zero, &key, 1);
-            Assert.That(rc, Is.EqualTo(DeleteInvalidKey));
+            Assert.That(rc, Is.EqualTo(DeleteInvalidArgs));
         }
 
         [Test]

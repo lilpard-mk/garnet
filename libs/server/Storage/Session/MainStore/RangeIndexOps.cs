@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -221,6 +222,11 @@ namespace Garnet.server
                 }
 
                 var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
+                if (insertResult == BfTreeInsertResult.InvalidArguments)
+                {
+                    logger?.LogError("RI.SET: native insert reported invalid arguments for a {keyLen}-byte field and {valueLen}-byte value; this indicates a bug.", field.Length, value.Length);
+                    throw new GarnetException("RI.SET: native insert reported invalid arguments (null pointer or negative length).");
+                }
                 if (insertResult == BfTreeInsertResult.InvalidKV)
                 {
                     ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);
@@ -302,6 +308,12 @@ namespace Garnet.server
                     var valueStart = bufStart + optimisticHeaderSize;
                     var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueSize, out var bytesWritten);
 
+                    if (readResult == BfTreeReadResult.InvalidArguments)
+                    {
+                        logger?.LogError("RI.GET: native read reported invalid arguments for a {fieldLen}-byte field; this indicates a bug.", field.Length);
+                        throw new GarnetException("RI.GET: native read reported invalid arguments (null pointer or negative length).");
+                    }
+
                     if (readResult != BfTreeReadResult.Found || bytesWritten < 0)
                     {
                         result = RangeIndexResult.NotFound;
@@ -340,6 +352,13 @@ namespace Garnet.server
                     {
                         var valueStart = bufStart + optimisticHeaderSize;
                         var readResult = BfTreeService.ReadByPtrInto(stub.TreeHandle, field, valueStart, maxValueSize, out var bytesWritten);
+
+                        if (readResult == BfTreeReadResult.InvalidArguments)
+                        {
+                            heapMemory.Dispose();
+                            logger?.LogError("RI.GET: native read reported invalid arguments for a {fieldLen}-byte field; this indicates a bug.", field.Length);
+                            throw new GarnetException("RI.GET: native read reported invalid arguments (null pointer or negative length).");
+                        }
 
                         if (readResult != BfTreeReadResult.Found || bytesWritten < 0)
                         {
@@ -414,8 +433,8 @@ namespace Garnet.server
                 var deleteResult = BfTreeService.DeleteByPtr(treePtr, field);
                 if (deleteResult != BfTreeDeleteResult.Success)
                 {
-                    result = RangeIndexResult.Error;
-                    return GarnetStatus.OK;
+                    logger?.LogError("RI.DEL: native delete reported {result} for a {fieldLen}-byte field; this indicates a bug.", deleteResult, field.Length);
+                    throw new GarnetException($"RI.DEL: native delete reported {deleteResult} (null pointer or negative length).");
                 }
 
                 result = RangeIndexResult.OK;
