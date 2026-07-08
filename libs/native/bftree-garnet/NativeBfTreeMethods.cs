@@ -71,10 +71,10 @@ namespace Garnet.server.BfTreeInterop
             int* out_value_len);
 
         /// <summary>
-        /// Delete a key from the tree.
+        /// Delete a key from the tree. Returns 0 on success, -1 on invalid key.
         /// </summary>
         [LibraryImport(LibName)]
-        internal static partial void bftree_delete(
+        internal static partial int bftree_delete(
             nint tree,
             byte* key, int key_len);
 

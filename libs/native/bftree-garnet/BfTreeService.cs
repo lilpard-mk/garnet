@@ -37,6 +37,17 @@ namespace Garnet.server.BfTreeInterop
     }
 
     /// <summary>
+    /// Result codes for BfTree delete operations.
+    /// </summary>
+    public enum BfTreeDeleteResult
+    {
+        /// <summary>Delete succeeded.</summary>
+        Success = 0,
+        /// <summary>The key is invalid (null pointer or negative length).</summary>
+        InvalidKey = -1,
+    }
+
+    /// <summary>
     /// Specifies which fields a scan operation should return.
     /// </summary>
     public enum ScanReturnField : byte
@@ -211,9 +222,9 @@ namespace Garnet.server.BfTreeInterop
         /// Delete a key. Zero-overhead.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Delete(PinnedSpanByte key)
+        public BfTreeDeleteResult Delete(PinnedSpanByte key)
         {
-            NativeBfTreeMethods.bftree_delete(_tree, key.ToPointer(), key.Length);
+            return (BfTreeDeleteResult)NativeBfTreeMethods.bftree_delete(_tree, key.ToPointer(), key.Length);
         }
 
         /// <summary>
@@ -280,9 +291,9 @@ namespace Garnet.server.BfTreeInterop
         /// Delete via native pointer.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void DeleteByPtr(nint treePtr, PinnedSpanByte key)
+        public static BfTreeDeleteResult DeleteByPtr(nint treePtr, PinnedSpanByte key)
         {
-            NativeBfTreeMethods.bftree_delete(treePtr, key.ToPointer(), key.Length);
+            return (BfTreeDeleteResult)NativeBfTreeMethods.bftree_delete(treePtr, key.ToPointer(), key.Length);
         }
 
         /// <summary>
@@ -377,11 +388,11 @@ namespace Garnet.server.BfTreeInterop
         /// <summary>
         /// Delete a key from the BfTree.
         /// </summary>
-        public void Delete(ReadOnlySpan<byte> key)
+        public BfTreeDeleteResult Delete(ReadOnlySpan<byte> key)
         {
             ObjectDisposedException.ThrowIf(_disposed != 0, this);
             fixed (byte* kp = key)
-                Delete(PinnedSpanByte.FromPinnedPointer(kp, key.Length));
+                return Delete(PinnedSpanByte.FromPinnedPointer(kp, key.Length));
         }
 
         /// <summary>

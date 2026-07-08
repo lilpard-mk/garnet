@@ -23,6 +23,9 @@ const READ_INVALID_KEY: i32 = -3;
 const INSERT_SUCCESS: i32 = 0;
 const INSERT_INVALID_KV: i32 = 1;
 
+const DELETE_SUCCESS: i32 = 0;
+const DELETE_INVALID_KEY: i32 = -1;
+
 // ---------------------------------------------------------------------------
 // Storage backend constants (matches C# StorageBackendType enum)
 // ---------------------------------------------------------------------------
@@ -213,7 +216,8 @@ pub unsafe extern "C" fn bftree_read(
     }
 }
 
-/// Delete a key from the tree.
+/// Delete a key from the tree. Returns DELETE_SUCCESS (0) or DELETE_INVALID_KEY (-1)
+/// when the arguments are invalid (null pointers or a negative length).
 ///
 /// # Safety
 /// `tree` must be a valid BfTree pointer. `key` must point to valid memory.
@@ -222,14 +226,15 @@ pub unsafe extern "C" fn bftree_delete(
     tree: *mut BfTree,
     key: *const u8,
     key_len: i32,
-) {
+) -> i32 {
     if tree.is_null() || key.is_null() || key_len < 0 {
-        return;
+        return DELETE_INVALID_KEY;
     }
 
     let tree = &*tree;
     let key = slice::from_raw_parts(key, key_len as usize);
     tree.delete(key);
+    DELETE_SUCCESS
 }
 
 // ---------------------------------------------------------------------------

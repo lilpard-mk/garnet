@@ -211,16 +211,16 @@ namespace BfTreeInterop.test
         {
             var key = "toremove"u8;
             _tree.Insert(key, "data"u8);
-            _tree.Delete(key);
+            Assert.That(_tree.Delete(key), Is.EqualTo(BfTreeDeleteResult.Success));
 
             var readResult = _tree.Read(key, out _);
             Assert.That(readResult, Is.EqualTo(BfTreeReadResult.Deleted));
         }
 
         [Test]
-        public void DeleteNonExistentKey_DoesNotThrow()
+        public void DeleteNonExistentKey_ReturnsSuccess()
         {
-            Assert.DoesNotThrow(() => _tree.Delete("ghost"u8));
+            Assert.That(_tree.Delete("ghost"u8), Is.EqualTo(BfTreeDeleteResult.Success));
         }
 
         // ---------------------------------------------------------------
@@ -654,7 +654,7 @@ namespace BfTreeInterop.test
             fixed (byte* kp = keyBytes)
             {
                 var key = PinnedSpanByte.FromPinnedPointer(kp, -1);
-                Assert.DoesNotThrow(() => _tree.Delete(key));
+                Assert.That(_tree.Delete(key), Is.EqualTo(BfTreeDeleteResult.InvalidKey));
             }
 
             // The pre-existing key must be untouched by the rejected delete.
