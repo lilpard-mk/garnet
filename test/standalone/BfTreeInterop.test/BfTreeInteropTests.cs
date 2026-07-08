@@ -663,12 +663,13 @@ namespace BfTreeInterop.test
         }
 
         [Test]
-        public void ScanWithCount_NegativeCount_ReturnsEmpty()
+        public void ScanWithCount_NegativeCount_Throws()
         {
             InsertTestData(10);
 
-            var results = _tree.ScanWithCount("key:"u8, -1, ScanReturnField.Key);
-            Assert.That(results, Is.Empty);
+            // A negative count makes the native scan-create reject with a null handle,
+            // which the wrapper surfaces as a bug rather than a silent empty result.
+            Assert.Throws<InvalidOperationException>(() => _tree.ScanWithCount("key:"u8, -1, ScanReturnField.Key));
 
             // A subsequent valid scan must still work.
             Assert.That(_tree.ScanWithCount("key:"u8, 10, ScanReturnField.Key), Is.Not.Empty);
