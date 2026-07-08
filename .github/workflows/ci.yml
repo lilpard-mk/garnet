@@ -138,9 +138,6 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
       - name: Install dependencies
         run: dotnet restore
-      # BfTreeInterop.test loads a native Rust cdylib. A single-framework build does not trigger
-      # the csproj's cross-targeting-only cargo build, so build it here to ensure the freshly
-      # compiled binary (not the committed fallback in runtimes/) is used by the test.
       - name: Build native BfTree library
         if: ${{ matrix.test == 'BfTreeInterop.test' }}
         run: cargo build --release --locked --manifest-path libs/native/bftree-garnet/Cargo.toml
