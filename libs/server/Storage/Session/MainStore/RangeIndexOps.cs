@@ -227,6 +227,7 @@ namespace Garnet.server
                     logger?.LogError("RI.SET: native insert reported invalid arguments for a {keyLen}-byte field and {valueLen}-byte value.", field.Length, value.Length);
                     throw new GarnetException("RI.SET: native insert reported invalid arguments (null pointer or negative length).");
                 }
+
                 if (insertResult == BfTreeInsertResult.InvalidKV)
                 {
                     ref readonly var stub = ref RangeIndexManager.ReadIndex(stubSpan);

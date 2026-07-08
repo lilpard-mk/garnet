@@ -312,8 +312,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_count(
                     treePtr, skp, startKey.Length, count, (byte)returnField);
             }
+
             if (handle == nint.Zero)
                 throw new InvalidOperationException("bftree_scan_with_count returned a null handle (invalid arguments: null pointer or negative length/count). This indicates a caller bug.");
+
             try
             {
                 Span<byte> buffer = stackalloc byte[8192];
@@ -337,8 +339,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_end_key(
                     treePtr, skp, startKey.Length, ekp, endKey.Length, (byte)returnField);
             }
+
             if (handle == nint.Zero)
                 throw new InvalidOperationException("bftree_scan_with_end_key returned a null handle (invalid arguments: null pointer or negative length). This indicates a caller bug.");
+
             try
             {
                 Span<byte> buffer = stackalloc byte[8192];
@@ -427,8 +431,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_count(
                     _tree, skp, startKey.Length, count, (byte)returnField);
             }
+
             if (handle == nint.Zero)
                 throw new InvalidOperationException("bftree_scan_with_count returned a null handle (invalid arguments: null pointer or negative length/count). This indicates a caller bug.");
+
             try
             {
                 return DrainScanIteratorWithCallback(handle, scanBuffer, returnField, onRecord);
@@ -455,8 +461,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_count(
                     _tree, skp, startKey.Length, count, (byte)returnField);
             }
+
             if (handle == nint.Zero)
                 throw new InvalidOperationException("bftree_scan_with_count returned a null handle (invalid arguments: null pointer or negative length/count). This indicates a caller bug.");
+
             try
             {
                 return DrainScanIteratorToList(handle, returnField);
@@ -481,8 +489,10 @@ namespace Garnet.server.BfTreeInterop
                 handle = NativeBfTreeMethods.bftree_scan_with_end_key(
                     _tree, skp, startKey.Length, ekp, endKey.Length, (byte)returnField);
             }
+
             if (handle == nint.Zero)
                 throw new InvalidOperationException("bftree_scan_with_end_key returned a null handle (invalid arguments: null pointer or negative length). This indicates a caller bug.");
+
             try
             {
                 return DrainScanIteratorToList(handle, returnField);

@@ -23,28 +23,28 @@ namespace BfTreeInterop.test
         private const int ReadInvalidArgs = -4;
         private const int DeleteInvalidArgs = -1;
 
-        private nint _tree;
+        private nint tree;
 
         [SetUp]
         public void Setup()
         {
-            _tree = NativeBfTreeMethods.bftree_create(0, 0, 0, 0, 0, StorageMemory, null, 0, null, 0);
-            Assert.That(_tree, Is.Not.EqualTo(nint.Zero), "failed to create memory-backed tree");
+            tree = NativeBfTreeMethods.bftree_create(0, 0, 0, 0, 0, StorageMemory, null, 0, null, 0);
+            Assert.That(tree, Is.Not.EqualTo(nint.Zero), "failed to create memory-backed tree");
         }
 
         [TearDown]
         public void TearDown()
         {
-            if (_tree != nint.Zero)
-                NativeBfTreeMethods.bftree_drop(_tree);
-            _tree = nint.Zero;
+            if (tree != nint.Zero)
+                NativeBfTreeMethods.bftree_drop(tree);
+            tree = nint.Zero;
         }
 
         [Test]
         public void Insert_NegativeKeyLen_ReturnsInvalidArgs()
         {
             byte value = 0;
-            var rc = NativeBfTreeMethods.bftree_insert(_tree, null, -1, &value, 1);
+            var rc = NativeBfTreeMethods.bftree_insert(tree, null, -1, &value, 1);
             Assert.That(rc, Is.EqualTo(InsertInvalidArgs));
         }
 
@@ -52,7 +52,7 @@ namespace BfTreeInterop.test
         public void Insert_NegativeValueLen_ReturnsInvalidArgs()
         {
             byte key = 0;
-            var rc = NativeBfTreeMethods.bftree_insert(_tree, &key, 1, null, -1);
+            var rc = NativeBfTreeMethods.bftree_insert(tree, &key, 1, null, -1);
             Assert.That(rc, Is.EqualTo(InsertInvalidArgs));
         }
 
@@ -69,7 +69,7 @@ namespace BfTreeInterop.test
         {
             byte* outBuffer = stackalloc byte[16];
             int outLen = 0;
-            var rc = NativeBfTreeMethods.bftree_read(_tree, null, -1, outBuffer, 16, &outLen);
+            var rc = NativeBfTreeMethods.bftree_read(tree, null, -1, outBuffer, 16, &outLen);
             Assert.That(rc, Is.EqualTo(ReadInvalidArgs));
         }
 
@@ -78,14 +78,14 @@ namespace BfTreeInterop.test
         {
             byte key = 0;
             int outLen = 0;
-            var rc = NativeBfTreeMethods.bftree_read(_tree, &key, 1, null, -1, &outLen);
+            var rc = NativeBfTreeMethods.bftree_read(tree, &key, 1, null, -1, &outLen);
             Assert.That(rc, Is.EqualTo(ReadInvalidArgs));
         }
 
         [Test]
         public void Delete_NegativeKeyLen_ReturnsInvalidArgs()
         {
-            var rc = NativeBfTreeMethods.bftree_delete(_tree, null, -1);
+            var rc = NativeBfTreeMethods.bftree_delete(tree, null, -1);
             Assert.That(rc, Is.EqualTo(DeleteInvalidArgs));
         }
 
@@ -101,7 +101,7 @@ namespace BfTreeInterop.test
         public void ScanWithCount_NegativeStartKeyLen_ReturnsNullHandle()
         {
             byte start = 0;
-            var handle = NativeBfTreeMethods.bftree_scan_with_count(_tree, &start, -1, 10, 2);
+            var handle = NativeBfTreeMethods.bftree_scan_with_count(tree, &start, -1, 10, 2);
             Assert.That(handle, Is.EqualTo(nint.Zero));
         }
 
@@ -109,7 +109,7 @@ namespace BfTreeInterop.test
         public void ScanWithCount_NegativeCount_ReturnsNullHandle()
         {
             byte start = 0;
-            var handle = NativeBfTreeMethods.bftree_scan_with_count(_tree, &start, 1, -1, 2);
+            var handle = NativeBfTreeMethods.bftree_scan_with_count(tree, &start, 1, -1, 2);
             Assert.That(handle, Is.EqualTo(nint.Zero));
         }
 
@@ -117,7 +117,7 @@ namespace BfTreeInterop.test
         public void ScanWithEndKey_NegativeStartKeyLen_ReturnsNullHandle()
         {
             byte start = 0, end = 0xff;
-            var handle = NativeBfTreeMethods.bftree_scan_with_end_key(_tree, &start, -1, &end, 1, 2);
+            var handle = NativeBfTreeMethods.bftree_scan_with_end_key(tree, &start, -1, &end, 1, 2);
             Assert.That(handle, Is.EqualTo(nint.Zero));
         }
 
@@ -125,7 +125,7 @@ namespace BfTreeInterop.test
         public void ScanWithEndKey_NegativeEndKeyLen_ReturnsNullHandle()
         {
             byte start = 0, end = 0xff;
-            var handle = NativeBfTreeMethods.bftree_scan_with_end_key(_tree, &start, 1, &end, -1, 2);
+            var handle = NativeBfTreeMethods.bftree_scan_with_end_key(tree, &start, 1, &end, -1, 2);
             Assert.That(handle, Is.EqualTo(nint.Zero));
         }
 
