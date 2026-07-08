@@ -19,17 +19,13 @@ const READ_FOUND: i32 = 0; // Actual byte count is in `out_value_len`.
 const READ_NOT_FOUND: i32 = -1;
 const READ_DELETED: i32 = -2;
 const READ_INVALID_KEY: i32 = -3;
-/// Invalid arguments (null pointer or negative length) — indicates a caller bug.
 const READ_INVALID_ARGS: i32 = -4;
 
 const INSERT_SUCCESS: i32 = 0;
-/// Key/value violates the tree's configured size limits (a domain/user error).
 const INSERT_INVALID_KV: i32 = 1;
-/// Invalid arguments (null pointer or negative length) — indicates a caller bug.
 const INSERT_INVALID_ARGS: i32 = -1;
 
 const DELETE_SUCCESS: i32 = 0;
-/// Invalid arguments (null pointer or negative length) — indicates a caller bug.
 const DELETE_INVALID_ARGS: i32 = -1;
 
 // ---------------------------------------------------------------------------
