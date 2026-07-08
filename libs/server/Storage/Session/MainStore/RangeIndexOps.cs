@@ -224,7 +224,7 @@ namespace Garnet.server
                 var insertResult = BfTreeService.InsertByPtr(treePtr, field, value);
                 if (insertResult == BfTreeInsertResult.InvalidArguments)
                 {
-                    logger?.LogError("RI.SET: native insert reported invalid arguments for a {keyLen}-byte field and {valueLen}-byte value; this indicates a bug.", field.Length, value.Length);
+                    logger?.LogError("RI.SET: native insert reported invalid arguments for a {keyLen}-byte field and {valueLen}-byte value.", field.Length, value.Length);
                     throw new GarnetException("RI.SET: native insert reported invalid arguments (null pointer or negative length).");
                 }
                 if (insertResult == BfTreeInsertResult.InvalidKV)
@@ -310,7 +310,7 @@ namespace Garnet.server
 
                     if (readResult == BfTreeReadResult.InvalidArguments)
                     {
-                        logger?.LogError("RI.GET: native read reported invalid arguments for a {fieldLen}-byte field; this indicates a bug.", field.Length);
+                        logger?.LogError("RI.GET: native read reported invalid arguments for a {fieldLen}-byte field.", field.Length);
                         throw new GarnetException("RI.GET: native read reported invalid arguments (null pointer or negative length).");
                     }
 
@@ -356,7 +356,7 @@ namespace Garnet.server
                         if (readResult == BfTreeReadResult.InvalidArguments)
                         {
                             heapMemory.Dispose();
-                            logger?.LogError("RI.GET: native read reported invalid arguments for a {fieldLen}-byte field; this indicates a bug.", field.Length);
+                            logger?.LogError("RI.GET: native read reported invalid arguments for a {fieldLen}-byte field.", field.Length);
                             throw new GarnetException("RI.GET: native read reported invalid arguments (null pointer or negative length).");
                         }
 
@@ -433,7 +433,7 @@ namespace Garnet.server
                 var deleteResult = BfTreeService.DeleteByPtr(treePtr, field);
                 if (deleteResult != BfTreeDeleteResult.Success)
                 {
-                    logger?.LogError("RI.DEL: native delete reported {result} for a {fieldLen}-byte field; this indicates a bug.", deleteResult, field.Length);
+                    logger?.LogError("RI.DEL: native delete reported {result} for a {fieldLen}-byte field.", deleteResult, field.Length);
                     throw new GarnetException($"RI.DEL: native delete reported {deleteResult} (null pointer or negative length).");
                 }
 
