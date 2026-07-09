@@ -44,13 +44,13 @@ namespace Garnet.server
         /// <param name="serializer">The pure state-machine serializer.</param>
         /// <param name="fileStream">The file stream to read snapshot data from.</param>
         /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
+        /// <param name="logger">Optional logger for delete failures.</param>
         /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read file data from disk.
         /// This is deliberately independent of the destination chunk size passed to
         /// <see cref="ReadNextChunkAsync"/> — a larger read buffer reduces file-system reads. When
         /// <c>null</c>, <see cref="DefaultFileReadBufferSize"/> is used. Must be positive when specified.</param>
-        /// <param name="logger">Optional logger for delete failures.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="readBufferSize"/> is not positive.</exception>
-        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, int? readBufferSize = null, ILogger logger = null)
+        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, ILogger logger = null, int? readBufferSize = null)
         {
             if (readBufferSize is <= 0)
                 throw new ArgumentOutOfRangeException(nameof(readBufferSize), readBufferSize, "readBufferSize must be positive.");

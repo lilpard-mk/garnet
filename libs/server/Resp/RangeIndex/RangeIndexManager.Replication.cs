@@ -241,7 +241,7 @@ namespace Garnet.server
                 // FileStream but does NOT delete the snapshot: PublishMigratedIndex moves it into place after
                 // streaming completes. readBufferSize is null so the reader picks its own (larger) file-read
                 // buffer, independent of the per-entry chunk size.
-                using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, readBufferSize: null, logger);
+                using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, logger);
 
                 var isFirst = true;
                 while (!reader.IsComplete)
