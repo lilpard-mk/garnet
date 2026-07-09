@@ -52,7 +52,7 @@ namespace Garnet.server
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="readBufferSize"/> is not positive.</exception>
         public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, ILogger logger = null, int? readBufferSize = null)
         {
-            if (readBufferSize is <= 0)
+            if (readBufferSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(readBufferSize), readBufferSize, "readBufferSize must be positive.");
 
             this.serializer = serializer;
