@@ -117,8 +117,6 @@ namespace Garnet.server
 
                 var serializer = new RangeIndexChunkedSerializer(keyBytes.ToArray(), stubBytes, totalBytes);
                 var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: RangeIndexMigrationReader.DefaultFileReadBufferSize);
-                // readBufferSize is null so the reader picks its own (larger) file-read buffer, independent
-                // of the per-chunk transmit size.
                 return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, logger);
             }
         }
