@@ -123,8 +123,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="localServerSession">The local server session for store access.</param>
         /// <param name="keyBytes">The key bytes of the RangeIndex to serialize.</param>
-        /// <param name="chunkSize">The chunk size for streaming. Defaults to <see cref="DefaultMigrationChunkSize"/>.</param>
-        public unsafe RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes, int chunkSize = DefaultMigrationChunkSize)
+        public unsafe RangeIndexMigrationReader SnapshotRangeIndexAndCreateReader(LocalServerSession localServerSession, ReadOnlySpan<byte> keyBytes)
         {
             fixed (byte* keyPtr = keyBytes)
             {
@@ -133,8 +132,10 @@ namespace Garnet.server
                     throw new InvalidOperationException("Failed to snapshot BfTree for migration");
 
                 var serializer = new RangeIndexChunkedSerializer(keyBytes.ToArray(), stubBytes, totalBytes);
-                var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
-                return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, chunkSize, logger);
+                var fileStream = new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: RangeIndexMigrationReader.DefaultFileReadBufferSize);
+                // readBufferSize is null so the reader picks its own (larger) file-read buffer, independent
+                // of the per-chunk transmit size.
+                return new RangeIndexMigrationReader(serializer, fileStream, snapshotPath, readBufferSize: null, logger);
             }
         }
 

@@ -226,23 +226,22 @@ namespace Garnet.server
                 return;
             }
 
+            chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);
             var streamActivity = RangeIndexReplicationActivities.StreamActivity.StartActivity(chunkSize);
-            byte[] destBuffer = null;
+            byte[] destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
             try
             {
-                chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);
-
                 var fileLen = new FileInfo(filePath).Length;
                 streamActivity.OnFileLength(fileLen);
                 var serializer = new RangeIndexChunkedSerializer(key.ToArray(), stub.ToArray(), fileLen);
-                var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
+                var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: RangeIndexMigrationReader.DefaultFileReadBufferSize);
 
                 // Reuse the migration reader to drive the serializer — the exact same chunking the
                 // source-side migration transmit path uses. tempFilePath is null so the reader disposes the
                 // FileStream but does NOT delete the snapshot: PublishMigratedIndex moves it into place after
-                // streaming completes.
-                using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, chunkSize, logger);
-                destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+                // streaming completes. readBufferSize is null so the reader picks its own (larger) file-read
+                // buffer, independent of the per-entry chunk size.
+                using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, readBufferSize: null, logger);
 
                 var isFirst = true;
                 while (!reader.IsComplete)
@@ -271,8 +270,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (destBuffer != null)
-                    ArrayPool<byte>.Shared.Return(destBuffer);
+                ArrayPool<byte>.Shared.Return(destBuffer);
                 streamActivity.EndAndLog(logger, key);
             }
         }

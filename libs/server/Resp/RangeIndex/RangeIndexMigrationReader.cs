@@ -29,6 +29,14 @@ namespace Garnet.server
         public long TotalFileBytes => serializer.TotalFileBytes;
 
         /// <summary>
+        /// Default size (bytes) of the internal file-read buffer when the caller does not specify one.
+        /// This is independent of the destination (serialization) chunk size passed to
+        /// <see cref="ReadNextChunk"/> / <see cref="ReadNextChunkAsync"/>; a larger read buffer reduces
+        /// the number of file-system reads.
+        /// </summary>
+        public const int DefaultFileReadBufferSize = 1 << 20; // 1 MiB
+
+        /// <summary>
         /// Create a migration reader that wraps a serializer and file stream. On dispose,
         /// the underlying <paramref name="fileStream"/> is closed and <paramref name="tempFilePath"/>
         /// is deleted (best-effort) so source-side migration snapshots do not accumulate.
@@ -36,21 +44,22 @@ namespace Garnet.server
         /// <param name="serializer">The pure state-machine serializer.</param>
         /// <param name="fileStream">The file stream to read snapshot data from.</param>
         /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
-        /// <param name="chunkSize">Size of the internal buffer used to read file data from disk; must be positive.
-        /// The forward-progress minimum (trailer size) applies to the <c>destination</c> passed to
-        /// <see cref="ReadNextChunkAsync"/>, not to this buffer.</param>
+        /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read file data from disk.
+        /// This is deliberately independent of the destination chunk size passed to
+        /// <see cref="ReadNextChunkAsync"/> — a larger read buffer reduces file-system reads. When
+        /// <c>null</c>, <see cref="DefaultFileReadBufferSize"/> is used. Must be positive when specified.</param>
         /// <param name="logger">Optional logger for delete failures.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="chunkSize"/> is not positive.</exception>
-        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, int chunkSize, ILogger logger = null)
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="readBufferSize"/> is not positive.</exception>
+        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, int? readBufferSize = null, ILogger logger = null)
         {
-            if (chunkSize <= 0)
-                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize, "chunkSize must be positive.");
+            if (readBufferSize is <= 0)
+                throw new ArgumentOutOfRangeException(nameof(readBufferSize), readBufferSize, "readBufferSize must be positive.");
 
             this.serializer = serializer;
             this.fileStream = fileStream;
             this.tempFilePath = tempFilePath;
             this.logger = logger;
-            readBuffer = new byte[chunkSize];
+            readBuffer = new byte[readBufferSize ?? DefaultFileReadBufferSize];
         }
 
         /// <summary>
