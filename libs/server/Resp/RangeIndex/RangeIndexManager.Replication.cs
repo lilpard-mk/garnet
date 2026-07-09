@@ -313,10 +313,7 @@ namespace Garnet.server
             var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
             var requiredPageBytes = (long)chunkSize + DefaultMigrationChunkSize;
             if (pageBytes < requiredPageBytes)
-                throw new GarnetException(
-                    $"AOF page size ({pageBytes} bytes) must exceed the range index stream chunk size ({chunkSize} bytes) " +
-                    $"by at least {DefaultMigrationChunkSize} bytes (required {requiredPageBytes} bytes) so each chunk fits " +
-                    $"within one AOF page with margin. Increase --aof-page-size or reduce the range index stream chunk size.");
+                throw new GarnetException($"AOF page size ({pageBytes} bytes) is too small for range index stream chunk size {chunkSize}; needs at least {requiredPageBytes} bytes. Increase --aof-page-size.");
         }
 
         /// <summary>Enqueue a single <see cref="AofEntryType.RangeIndexStreamChunk"/> chunk to the AOF.</summary>
