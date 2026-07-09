@@ -45,12 +45,12 @@ namespace Garnet.server
 
         /// <summary>
         /// Per-key AOF RangeIndex stream reassembly state: the deserializer reassembling the stream plus the
-        /// <see cref="RangeIndexReplicationReassemblyActivity"/> tracing it.
+        /// <see cref="RangeIndexReplicationActivities.ReassemblyActivity"/> tracing it.
         /// </summary>
-        private sealed class StreamReassemblyState(RangeIndexChunkedDeserializer deserializer, RangeIndexReplicationReassemblyActivity activity)
+        private sealed class StreamReassemblyState(RangeIndexChunkedDeserializer deserializer, RangeIndexReplicationActivities.ReassemblyActivity activity)
         {
             internal readonly RangeIndexChunkedDeserializer deserializer = deserializer;
-            internal readonly RangeIndexReplicationReassemblyActivity activity = activity;
+            internal readonly RangeIndexReplicationActivities.ReassemblyActivity activity = activity;
         }
 
         /// <summary>
@@ -226,7 +226,7 @@ namespace Garnet.server
                 return;
             }
 
-            var streamActivity = RangeIndexReplicationStreamActivity.StartActivity(chunkSize);
+            var streamActivity = RangeIndexReplicationActivities.StreamActivity.StartActivity(chunkSize);
             try
             {
                 chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);
@@ -357,7 +357,7 @@ namespace Garnet.server
             if (isFirst)
                 RemoveAndDisposeStreamReassembly(keyArr, "NewStreamReceived");
 
-            var state = rangeIndexAofStreamReassembly.GetOrAdd(keyArr, _ => new StreamReassemblyState(new RangeIndexChunkedDeserializer(DeriveTempMigrationPath(), logger), RangeIndexReplicationReassemblyActivity.StartActivity()));
+            var state = rangeIndexAofStreamReassembly.GetOrAdd(keyArr, _ => new StreamReassemblyState(new RangeIndexChunkedDeserializer(DeriveTempMigrationPath(), logger), RangeIndexReplicationActivities.ReassemblyActivity.StartActivity()));
             var deserializer = state.deserializer;
             state.activity.OnChunkReceived(chunk.Length);
 
