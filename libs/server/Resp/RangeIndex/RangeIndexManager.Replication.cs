@@ -197,14 +197,17 @@ namespace Garnet.server
         /// </summary>
         private readonly ConcurrentDictionary<byte[], StreamReassemblyState> streamReassembly = new(ByteArrayComparer.Instance);
 
+        /// <summary>Number of in-progress per-key range index stream reassemblies (test visibility).</summary>
+        internal int PendingStreamReassemblyCount => streamReassembly.Count;
+
         /// <summary>
         /// Per-key AOF-stream reassembly state: the deserializer reassembling the stream plus the
-        /// <see cref="RangeIndexReplicationActivity"/> tracing it.
+        /// <see cref="RangeIndexReplicationReassemblyActivity"/> tracing it.
         /// </summary>
-        private sealed class StreamReassemblyState(RangeIndexChunkedDeserializer deserializer, RangeIndexReplicationActivity activity)
+        private sealed class StreamReassemblyState(RangeIndexChunkedDeserializer deserializer, RangeIndexReplicationReassemblyActivity activity)
         {
-            internal readonly RangeIndexChunkedDeserializer Deserializer = deserializer;
-            internal readonly RangeIndexReplicationActivity Activity = activity;
+            internal readonly RangeIndexChunkedDeserializer deserializer = deserializer;
+            internal readonly RangeIndexReplicationReassemblyActivity activity = activity;
         }
 
         // Bit flags packed into the range index stream chunk AOF entry's StringInput.arg1.
@@ -307,14 +310,6 @@ namespace Garnet.server
         /// crash recovery). Feeds the chunk into the per-key <see cref="RangeIndexChunkedDeserializer"/>;
         /// once the stream completes, publishes the reassembled BfTree via <see cref="PublishMigratedIndex"/>.
         /// </summary>
-        /// <remarks>
-        /// On the replay path the active AOF is disabled (replicas and recovery both replay with
-        /// <c>recordToAof:false</c>), so the re-stream inside <see cref="PublishMigratedIndex"/> is a
-        /// no-op here — Garnet does not support chained replication (replica-of-replica).
-        /// <para>The first chunk of a stream (flagged in <c>arg1</c>) resets any stale per-key
-        /// reassembly left by a prior stream that never completed (e.g. a migration that failed
-        /// mid-stream and was retried), so the retry reassembles cleanly.</para>
-        /// </remarks>
         internal void HandleRangeIndexStreamReplay(StorageSession session, ReadOnlySpan<byte> key, ref StringInput input)
         {
             var chunk = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -323,14 +318,9 @@ namespace Garnet.server
             ProcessStreamChunk(session, key, chunk, isFirst, isLast);
         }
 
-        /// <summary>Number of in-progress per-key range index stream reassemblies (test visibility).</summary>
-        internal int PendingStreamReassemblyCount => streamReassembly.Count;
-
         /// <summary>
         /// Core range index stream reassembly step: reset stale state on a stream's first chunk, feed the chunk
-        /// to the per-key deserializer, and publish when the stream completes. <paramref name="session"/>
-        /// is only dereferenced when the stream completes (so incomplete-stream paths tolerate a null
-        /// session in tests).
+        /// to the per-key deserializer, and publish when the stream completes.
         /// </summary>
         internal void ProcessStreamChunk(StorageSession session, ReadOnlySpan<byte> key, ReadOnlySpan<byte> chunk, bool isFirst, bool isLast)
         {
@@ -338,31 +328,28 @@ namespace Garnet.server
 
             // A new stream's first chunk supersedes any incomplete reassembly for the same key.
             if (isFirst)
-                RemoveAndDisposeStreamReassembly(keyArr, "superseded by a new stream");
+                RemoveAndDisposeStreamReassembly(keyArr, "NewStream");
 
-            var state = streamReassembly.GetOrAdd(keyArr,
-                _ => new StreamReassemblyState(new RangeIndexChunkedDeserializer(DeriveTempMigrationPath(), logger), RangeIndexReplicationActivity.StartActivity()));
-            var deserializer = state.Deserializer;
-            state.Activity.OnChunkReceived(chunk.Length);
+            var state = streamReassembly.GetOrAdd(keyArr, _ => new StreamReassemblyState(new RangeIndexChunkedDeserializer(DeriveTempMigrationPath(), logger), RangeIndexReplicationReassemblyActivity.StartActivity()));
+            var deserializer = state.deserializer;
+            state.activity.OnChunkReceived(chunk.Length);
 
             if (!deserializer.ProcessChunk(chunk) || deserializer.HasError)
             {
-                logger?.LogError("HandleRangeIndexStreamReplay: failed to process range index stream chunk for key");
-                RemoveAndDisposeStreamReassembly(keyArr, "chunk processing error");
+                logger?.LogError("HandleRangeIndexStreamReplay: failed to process range index stream chunk. ");
+                RemoveAndDisposeStreamReassembly(keyArr, "ChunkProcessingError");
                 return;
             }
 
             if (deserializer.IsComplete)
             {
-                var publishResult = PublishMigratedIndex(
-                    deserializer.Key, deserializer.Stub, deserializer.TempPath, replaceOption: false,
-                    ref session.stringBasicContext, session.functionsState.appendOnlyFile);
-                state.Activity.OnPublishResult(publishResult);
+                var publishResult = PublishMigratedIndex(deserializer.Key, deserializer.Stub, deserializer.TempPath, replaceOption: false, ref session.stringBasicContext, session.functionsState.appendOnlyFile);
+                state.activity.OnPublishResult(publishResult);
 
                 if (publishResult == PublishMigratedIndexResult.Failed)
                     logger?.LogError("HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay");
 
-                RemoveAndDisposeStreamReassembly(keyArr, publishResult == PublishMigratedIndexResult.Failed ? "publish failed" : "completed");
+                RemoveAndDisposeStreamReassembly(keyArr, publishResult == PublishMigratedIndexResult.Failed ? "PublishFailed" : "Completed");
                 return;
             }
 
@@ -396,8 +383,8 @@ namespace Garnet.server
         {
             if (streamReassembly.TryRemove(key, out var state))
             {
-                state.Activity.EndAndLog(logger, reason);
-                state.Deserializer.Dispose();
+                state.activity.EndAndLog(logger, key, reason);
+                state.deserializer.Dispose();
             }
         }
     }
