@@ -52,8 +52,7 @@ namespace Garnet.server
         internal void SetAofStreamChunkSizeForTesting(int chunkSize)
         {
             if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize,
-                    $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
+                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize, $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
             rangeIndexAofStreamChunkSize = chunkSize;
         }
 
