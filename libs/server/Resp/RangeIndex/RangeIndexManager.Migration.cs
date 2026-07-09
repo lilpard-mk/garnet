@@ -44,22 +44,6 @@ namespace Garnet.server
         public const int DefaultMigrationChunkSize = 256 * 1024;
 
         /// <summary>
-        /// Conservative upper bound on the non-payload bytes of a single
-        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry, used only as a startup estimate
-        /// (default sizing + config validation) where no AOF log exists yet. At run time the exact
-        /// per-key overhead is obtained from the log via <c>GarnetLog.GetMaxAofEntryOverhead</c>, which
-        /// is authoritative. Covers:
-        /// <list type="bullet">
-        /// <item>TsavoriteLog record header + <see cref="AofHeader"/> (or larger sharded header)</item>
-        /// <item>the length-prefixed key</item>
-        /// <item><see cref="StringInput"/> framing (input header + <c>arg1</c> + parse-state prefixes)</item>
-        /// <item>alignment slack</item>
-        /// <item>an allowance for the RI key name</item>
-        /// </list>
-        /// </summary>
-        public const int AofStreamChunkEntryOverhead = 1024;
-
-        /// <summary>
         /// Discover which of the given keys are RangeIndex keys by reading each via
         /// <see cref="RespCommand.RIGET"/> through <see cref="ReadRangeIndex"/> (under a shared lock).
         /// Returns the set of keys that are RangeIndex type. Stub bytes are NOT captured here

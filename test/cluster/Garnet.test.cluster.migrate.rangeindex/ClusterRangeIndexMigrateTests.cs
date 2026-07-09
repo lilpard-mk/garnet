@@ -177,7 +177,7 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>Restart a node in place with recovery enabled (reconstructs state from its AOF).</summary>
-        private void RestartWithRecovery(int nodeIndex, int rangeIndexAofStreamChunkSize = 0)
+        private void RestartWithRecovery(int nodeIndex)
         {
             context.nodes[nodeIndex].Dispose(false);
             context.nodes[nodeIndex] = context.CreateInstance(
@@ -186,8 +186,7 @@ namespace Garnet.test.cluster
                 enableAOF: true,
                 cleanClusterConfig: false,
                 enableRangeIndexPreview: true,
-                timeout: 60,
-                rangeIndexAofStreamChunkSize: rangeIndexAofStreamChunkSize);
+                timeout: 60);
             context.nodes[nodeIndex].Start();
             context.CreateConnection();
         }
@@ -422,7 +421,8 @@ namespace Garnet.test.cluster
         {
             const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
 
-            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true, rangeIndexAofStreamChunkSize: SmallStreamChunkSize);
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.SetRangeIndexStreamChunkSizeOnAllNodes(SmallStreamChunkSize);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
 
@@ -443,7 +443,7 @@ namespace Garnet.test.cluster
             VerifyRangeIndexOnReplica(target, targetReplica, riKey, fields);
 
             // Target reconstructs the multi-chunk stream from its own AOF on recovery.
-            RestartWithRecovery(target, SmallStreamChunkSize);
+            RestartWithRecovery(target);
             ClassicAssert.IsTrue(PollRiGet(targetEp, riKey, fields[0].Field, fields[0].Value),
                 "Target did not recover the multi-chunk migrated RI key");
             VerifyFieldsOnEndpoint(targetEp, riKey, fields);
@@ -544,7 +544,8 @@ namespace Garnet.test.cluster
         {
             const int primaryCount = 2, replicaCount = 1, nodeCount = 4;
 
-            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true, rangeIndexAofStreamChunkSize: SmallStreamChunkSize);
+            context.CreateInstances(nodeCount, enableAOF: true, enableRangeIndexPreview: true);
+            context.SetRangeIndexStreamChunkSizeOnAllNodes(SmallStreamChunkSize);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
 

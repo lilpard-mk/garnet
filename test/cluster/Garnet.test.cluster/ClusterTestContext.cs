@@ -333,8 +333,7 @@ namespace Garnet.test.cluster
             bool useClusterAnnounceHostname = false,
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false,
-            int rangeIndexAofStreamChunkSize = 0)
+            bool enableRangeIndexPreview = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -394,13 +393,24 @@ namespace Garnet.test.cluster
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null,
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
-                enableRangeIndexPreview: enableRangeIndexPreview,
-                rangeIndexAofStreamChunkSize: rangeIndexAofStreamChunkSize);
+                enableRangeIndexPreview: enableRangeIndexPreview);
 
             foreach (var node in nodes)
                 node.Start();
 
             endpoints = TestUtils.GetShardEndPoints(shards, ipAddress, Port);
+        }
+
+        /// <summary>
+        /// Test-only: force a small range index stream chunk size on every node's RangeIndexManager so a
+        /// migrated Range Index's serialized file spans many AOF entries, exercising the chunked
+        /// replicate/reassemble path. Requires range index preview enabled; no-ops on nodes without a manager.
+        /// Call after the nodes are started (e.g. right after <see cref="CreateInstances"/>) and before migration.
+        /// </summary>
+        public void SetRangeIndexStreamChunkSizeOnAllNodes(int chunkSize)
+        {
+            foreach (var node in nodes)
+                node?.Provider?.StoreWrapper?.DefaultDatabase?.RangeIndexManager?.SetAofStreamChunkSizeForTesting(chunkSize);
         }
 
         /// <summary>
@@ -464,8 +474,7 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
             int threadPoolMinIOCompletionThreads = 0,
-            bool enableRangeIndexPreview = false,
-            int rangeIndexAofStreamChunkSize = 0)
+            bool enableRangeIndexPreview = false)
         {
             var opts = TestUtils.GetGarnetServerOptions(
                 TestFolder,
@@ -502,8 +511,7 @@ namespace Garnet.test.cluster
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
-                vectorSetQuantizationTaskCount: vectorSetQuantizationTaskCount,
-                rangeIndexAofStreamChunkSize: rangeIndexAofStreamChunkSize);
+                vectorSetQuantizationTaskCount: vectorSetQuantizationTaskCount);
 
             return new GarnetServer(opts, loggerFactory);
         }

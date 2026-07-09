@@ -667,10 +667,6 @@ namespace Garnet
         [Option("enable-range-index-preview", Required = false, HelpText = "Enable Range Index (preview) - this feature (and associated RI.* commands) are incomplete, unstable, and subject to change while still in preview")]
         public bool EnableRangeIndexPreview { get; set; }
 
-        [MemorySizeValidation(false)]
-        [Option("range-index-aof-stream-chunk-size", Required = false, HelpText = "Maximum size of each chunked range index stream AOF entry used to replicate a migrated Range Index to secondaries. Must be smaller than AofPageSize so each chunk fits in one AOF page.")]
-        public string RangeIndexAofStreamChunkSize { get; set; }
-
         [IntRangeValidation(0, int.MaxValue, isRequired: false)]
         [Option("vector-set-quantization-task-count", Required = false, HelpText = "Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count; maximum: the machine CPU count)")]
         public int VectorSetQuantizationTaskCount { get; set; }
@@ -977,7 +973,6 @@ namespace Garnet
                 VectorSetReplayTaskCount = VectorSetReplayTaskCount,
                 VectorSetQuantizationTaskCount = VectorSetQuantizationTaskCount,
                 EnableRangeIndexPreview = EnableRangeIndexPreview,
-                RangeIndexAofStreamChunkSize = string.IsNullOrEmpty(RangeIndexAofStreamChunkSize) ? null : (int?)ServerOptions.ParseSize(RangeIndexAofStreamChunkSize, out _),
             };
         }
 

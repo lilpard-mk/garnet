@@ -110,9 +110,28 @@ namespace Garnet.server
 
         /// <summary>
         /// Max size (bytes) of each <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to
-        /// replicate a migrated index. Chunk + framing overhead must fit in one AOF page.
+        /// replicate a migrated index. Chunk + framing overhead must fit in one AOF page. Production always
+        /// uses <see cref="DefaultMigrationChunkSize"/> (clamped to the AOF page at stream time); tests may
+        /// override it via <see cref="SetAofStreamChunkSizeForTesting"/> to exercise the multi-chunk path.
         /// </summary>
-        private readonly int rangeIndexAofStreamChunkSize;
+        private int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize;
+
+        /// <summary>
+        /// Test-only override for <see cref="rangeIndexAofStreamChunkSize"/>. Forces a small chunk size so a
+        /// migrated index's serialized file spans many <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF
+        /// entries, exercising the chunked replicate/reassemble path. Not reachable from server configuration.
+        /// </summary>
+        /// <param name="chunkSize">Chunk size in bytes; must be at least
+        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="chunkSize"/> is below the
+        /// minimum supported chunk size.</exception>
+        internal void SetAofStreamChunkSizeForTesting(int chunkSize)
+        {
+            if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize,
+                    $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
+            rangeIndexAofStreamChunkSize = chunkSize;
+        }
 
         /// <summary>
         /// Global checkpoint barrier. When non-zero, a checkpoint is snapshotting trees.
@@ -222,17 +241,13 @@ namespace Garnet.server
         /// <c>BfTree.Dispose</c> + file deletion past any in-flight reader observing the
         /// stub's <c>TreeHandle</c>. May be null in unit-test scenarios with no concurrent
         /// readers; in that case disposal is performed synchronously.</param>
-        /// <param name="rangeIndexAofStreamChunkSize">Maximum size (bytes) of each chunked
-        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to replicate a migrated index.</param>
         /// <param name="logger">Optional logger.</param>
         /// <exception cref="ArgumentException">Thrown when <paramref name="riLogRoot"/> is
         /// null or empty.</exception>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when
-        /// <paramref name="rangeIndexAofStreamChunkSize"/> is below the minimum supported chunk size.</exception>
         /// <exception cref="IOException">Thrown when the riLogRoot directory cannot be
         /// created (e.g., insufficient permissions). Wraps the underlying exception.</exception>
         public RangeIndexManager(string riLogRoot, string cprDir = null,
-            LightEpoch storeEpoch = null, int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize, ILogger logger = null)
+            LightEpoch storeEpoch = null, ILogger logger = null)
         {
             if (string.IsNullOrEmpty(riLogRoot))
                 throw new ArgumentException(
@@ -242,10 +257,6 @@ namespace Garnet.server
             this.riLogRoot = riLogRoot;
             this.cprDir = cprDir;
             this.storeEpoch = storeEpoch;
-            if (rangeIndexAofStreamChunkSize < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new ArgumentOutOfRangeException(nameof(rangeIndexAofStreamChunkSize), rangeIndexAofStreamChunkSize,
-                    $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
-            this.rangeIndexAofStreamChunkSize = rangeIndexAofStreamChunkSize;
             this.logger = logger;
             rangeIndexLocks = new ReadOptimizedLock(Environment.ProcessorCount);
 

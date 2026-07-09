@@ -386,7 +386,6 @@ namespace Garnet
                 rangeIndexManager = new RangeIndexManager(
                     riLogRoot: riLogRoot, cprDir: cprDir,
                     storeEpoch: storeEpoch,
-                    rangeIndexAofStreamChunkSize: serverOptions.RangeIndexAofStreamChunkSizeOrDefault,
                     logger: loggerFactory?.CreateLogger("RangeIndexManager"));
             }
             var vectorManager = new VectorManager(
