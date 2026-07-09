@@ -104,7 +104,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, mgr.PendingStreamReassemblyCount);
 
             // End-of-replay cleanup drops the incomplete reassembly (no leak).
-            mgr.CleanupIncompleteStreamReassembly();
+            mgr.DisposeIncompleteStreamReassembly();
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
         }
 
@@ -131,7 +131,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, mgr.PendingStreamReassemblyCount,
                 "retry stream should reassemble cleanly after the first chunk reset the stale partial");
 
-            mgr.CleanupIncompleteStreamReassembly();
+            mgr.DisposeIncompleteStreamReassembly();
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
         }
 

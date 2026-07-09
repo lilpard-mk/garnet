@@ -498,7 +498,7 @@ namespace Garnet.server
         public void Dispose()
         {
             // Drop any in-progress AOF-stream reassembly (e.g. a recovery truncated mid-stream).
-            CleanupIncompleteStreamReassembly();
+            DisposeIncompleteStreamReassembly();
 
             foreach (var kvp in liveIndexes)
             {

@@ -22,6 +22,38 @@ namespace Garnet.server
     public sealed partial class RangeIndexManager
     {
         /// <summary>
+        /// Sentinel placed in <c>StringInput.arg1</c> of the migration-publish <see cref="RespCommand.RICREATE"/>
+        /// RMW so <c>MainSessionFunctions.WriteLogRMW</c> skips adding to AOF: the range index stream
+        /// is the single AOF source of truth for a migrated key. Used only in the migration code path.
+        /// </summary>
+        internal const long StreamedPublishLogArg = long.MinValue;
+
+        // Bit flags packed into the range index stream chunk AOF entry's StringInput.arg1.
+        private const long StreamChunkIsLastFlag = 1L;
+        private const long StreamChunkIsFirstFlag = 2L;
+
+        /// <summary>
+        /// In-progress AOF-stream reassembly state, keyed by RangeIndex key. During migration of a RangeIndex,
+        /// the serialized BfTree file is streamed into the AOF as a sequence of chunked <see cref="AofEntryType.RangeIndexStreamChunk"/>.
+        /// Replicas replaying the AOF may receive these chunks interleaved with unrelated AOF entries, so we need to track
+        /// per-key state to correctly reassemble the stream.
+        /// </summary>
+        private readonly ConcurrentDictionary<byte[], StreamReassemblyState> rangeIndexAofStreamReassembly = new(ByteArrayComparer.Instance);
+
+        /// <summary>Number of in-progress per-key range index stream reassemblies (test visibility).</summary>
+        internal int PendingStreamReassemblyCount => rangeIndexAofStreamReassembly.Count;
+
+        /// <summary>
+        /// Per-key AOF RangeIndex stream reassembly state: the deserializer reassembling the stream plus the
+        /// <see cref="RangeIndexReplicationReassemblyActivity"/> tracing it.
+        /// </summary>
+        private sealed class StreamReassemblyState(RangeIndexChunkedDeserializer deserializer, RangeIndexReplicationReassemblyActivity activity)
+        {
+            internal readonly RangeIndexChunkedDeserializer deserializer = deserializer;
+            internal readonly RangeIndexReplicationReassemblyActivity activity = activity;
+        }
+
+        /// <summary>
         /// Log RI.SET to AOF via direct enqueue (no synthetic RMW).
         /// Skipped when <paramref name="storedProcMode"/> is true (stored procedure logs as a unit).
         /// </summary>
@@ -183,91 +215,80 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Sentinel placed in <c>StringInput.arg1</c> of the migration-publish <see cref="RespCommand.RICREATE"/>
-        /// RMW so <c>MainSessionFunctions.WriteLogRMW</c> skips auto-logging it: the range index stream
-        /// is the single AOF source of truth for a migrated key. Used only in the migration code path.
-        /// </summary>
-        internal const long StreamedPublishLogArg = long.MinValue;
-
-        /// <summary>
-        /// In-progress AOF-stream reassembly state, keyed by RangeIndex key. During AOF replay
-        /// (replica replication or crash recovery) the chunks of one migrated key's
-        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> stream may be interleaved with unrelated AOF entries;
-        /// per-key state lets reassembly survive those gaps. All entries for a given key hash to the
-        /// same virtual sublog, so same-key chunks arrive in order on a single replay task.
-        /// </summary>
-        private readonly ConcurrentDictionary<byte[], StreamReassemblyState> streamReassembly = new(ByteArrayComparer.Instance);
-
-        /// <summary>Number of in-progress per-key range index stream reassemblies (test visibility).</summary>
-        internal int PendingStreamReassemblyCount => streamReassembly.Count;
-
-        /// <summary>
-        /// Per-key AOF-stream reassembly state: the deserializer reassembling the stream plus the
-        /// <see cref="RangeIndexReplicationReassemblyActivity"/> tracing it.
-        /// </summary>
-        private sealed class StreamReassemblyState(RangeIndexChunkedDeserializer deserializer, RangeIndexReplicationReassemblyActivity activity)
-        {
-            internal readonly RangeIndexChunkedDeserializer deserializer = deserializer;
-            internal readonly RangeIndexReplicationReassemblyActivity activity = activity;
-        }
-
-        // Bit flags packed into the range index stream chunk AOF entry's StringInput.arg1.
-        private const long StreamChunkIsLastFlag = 1L;
-        private const long StreamChunkIsFirstFlag = 2L;
-
-        /// <summary>
         /// Stream a migrated RangeIndex's serialized BfTree file into the AOF as a sequence of
-        /// chunked <see cref="AofEntryType.RangeIndexStreamChunk"/> entries, reusing <see cref="RangeIndexChunkedSerializer"/>
-        /// for framing. No-op when <paramref name="appendOnlyFile"/> is null (AOF disabled / replica or
-        /// recovery replay, which replays with <c>recordToAof:false</c>). Each chunk is one AOF entry no
-        /// larger than <paramref name="chunkSize"/>, which must fit within a single AOF page.
+        /// chunked <see cref="AofEntryType.RangeIndexStreamChunk"/> entries.
         /// </summary>
-        internal unsafe void ReplicateRangeIndexStream(ReadOnlySpan<byte> key, ReadOnlySpan<byte> stub, string filePath,
-            GarnetAppendOnlyFile appendOnlyFile, long version, int sessionId, int chunkSize = DefaultMigrationChunkSize)
+        internal void ReplicateRangeIndexStream(ReadOnlySpan<byte> key, ReadOnlySpan<byte> stub, string filePath,
+            GarnetAppendOnlyFile appendOnlyFile, long version, int sessionId, int chunkSize)
         {
-            if (appendOnlyFile == null) return;
+            if (appendOnlyFile == null) {
+                logger?.LogWarning("ReplicateRangeIndexStream called with null appendOnlyFile");
+                return;
+            }
 
-            // Cap the chunk so each AOF entry (chunk payload + per-key framing) fits within one AOF
-            // page. The exact overhead is obtained from the log itself (GetMaxAofEntryOverhead), so it
-            // stays correct for the actual key length and if the AOF framing ever changes.
-            var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-            var perEntryOverhead = appendOnlyFile.Log.GetMaxAofEntryOverhead(key.Length, ChunkStringInputFramingBytes());
-            var maxChunkForPage = (int)(pageBytes - perEntryOverhead);
-            if (maxChunkForPage < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new GarnetException($"AOF page ({pageBytes} bytes) is too small to stream a migrated RangeIndex with a {key.Length}-byte key");
-            if (chunkSize > maxChunkForPage)
-                chunkSize = maxChunkForPage;
-
-            if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
-                chunkSize = RangeIndexChunkedSerializer.MinChunkSize;
-
-            var fileLen = new FileInfo(filePath).Length;
-            var serializer = new RangeIndexChunkedSerializer(key.ToArray(), stub.ToArray(), fileLen);
-            var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
-
-            // Reuse the migration reader to drive the serializer — the exact same chunking the
-            // source-side migration transmit path uses. tempFilePath is null so the reader disposes the
-            // FileStream but does NOT delete the snapshot: PublishMigratedIndex moves it into place after
-            // streaming completes.
-            using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, chunkSize, logger);
-
-            var destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+            var streamActivity = RangeIndexReplicationStreamActivity.StartActivity();
             try
             {
-                var isFirst = true;
-                while (!reader.IsComplete)
-                {
-                    var written = reader.ReadNextChunk(destBuffer.AsSpan(0, chunkSize));
-                    if (written == 0)
-                        continue;
+                // Cap the chunk so each AOF entry (chunk payload + per-key framing) fits within one AOF
+                // page. The exact overhead is obtained from the log itself (GetMaxAofEntryOverhead), so it
+                // stays correct for the actual key length and if the AOF framing ever changes.
+                var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
+                var perEntryOverhead = appendOnlyFile.Log.GetMaxAofEntryOverhead(key.Length, ChunkStringInputFramingBytes());
+                var maxChunkForPage = (int)(pageBytes - perEntryOverhead);
+                if (maxChunkForPage < RangeIndexChunkedSerializer.MinChunkSize)
+                    throw new GarnetException($"AOF page ({pageBytes} bytes) is too small to stream a migrated RangeIndex with a {key.Length}-byte key");
+                if (chunkSize > maxChunkForPage)
+                    chunkSize = maxChunkForPage;
 
-                    EnqueueRangeIndexStreamChunk(appendOnlyFile, version, sessionId, key, destBuffer.AsSpan(0, written), isFirst, reader.IsComplete);
-                    isFirst = false;
+                if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
+                    chunkSize = RangeIndexChunkedSerializer.MinChunkSize;
+
+                var fileLen = new FileInfo(filePath).Length;
+                streamActivity.OnFileLength(fileLen);
+                var serializer = new RangeIndexChunkedSerializer(key.ToArray(), stub.ToArray(), fileLen);
+                var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: chunkSize);
+
+                // Reuse the migration reader to drive the serializer — the exact same chunking the
+                // source-side migration transmit path uses. tempFilePath is null so the reader disposes the
+                // FileStream but does NOT delete the snapshot: PublishMigratedIndex moves it into place after
+                // streaming completes.
+                using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, chunkSize, logger);
+                var destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+                try
+                {
+                    var isFirst = true;
+                    while (!reader.IsComplete)
+                    {
+                        var written = reader.ReadNextChunk(destBuffer.AsSpan(0, chunkSize));
+
+                        // ReadNextChunk always makes progress while the stream is incomplete (it returns 0
+                        // only when already complete, which the loop guard prevents). A zero here means the
+                        // reader's contract was violated — record it and surface it instead of spinning.
+                        if (written == 0)
+                        {
+                            streamActivity.OnError("Zero-length chunk from reader");
+                            logger?.LogError("ReplicateRangeIndexStream: reader returned zero-length chunk with a {Size}-byte buffer while the stream is incomplete for key {key}", chunkSize, Encoding.UTF8.GetString(key));
+                            throw new GarnetException("ReplicateRangeIndexStream: reader returned zero-length chunk while the stream is incomplete");
+                        }
+
+                        EnqueueRangeIndexStreamChunk(appendOnlyFile, version, sessionId, key, destBuffer.AsSpan(0, written), isFirst, reader.IsComplete);
+                        streamActivity.OnChunkEnqueued(written);
+                        isFirst = false;
+                    }
                 }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(destBuffer);
+                }
+            }
+            catch (Exception ex)
+            {
+                streamActivity.OnError(ex.ToString());
+                throw;
             }
             finally
             {
-                ArrayPool<byte>.Shared.Return(destBuffer);
+                streamActivity.EndAndLog(logger, key);
             }
         }
 
@@ -296,13 +317,7 @@ namespace Garnet.server
                     arg1: (isLast ? StreamChunkIsLastFlag : 0) | (isFirst ? StreamChunkIsFirstFlag : 0),
                     flags: RespInputFlags.Deterministic);
 
-                appendOnlyFile.Log.Enqueue(
-                    AofEntryType.RangeIndexStreamChunk,
-                    version,
-                    sessionId,
-                    key,
-                    ref input,
-                    out _);
+                appendOnlyFile.Log.Enqueue(AofEntryType.RangeIndexStreamChunk, version, sessionId, key, ref input, out _);
             }
         }
 
@@ -329,9 +344,9 @@ namespace Garnet.server
 
             // A new stream's first chunk supersedes any incomplete reassembly for the same key.
             if (isFirst)
-                RemoveAndDisposeStreamReassembly(keyArr, "NewStream");
+                RemoveAndDisposeStreamReassembly(keyArr, "NewStreamReceived");
 
-            var state = streamReassembly.GetOrAdd(keyArr, _ => new StreamReassemblyState(new RangeIndexChunkedDeserializer(DeriveTempMigrationPath(), logger), RangeIndexReplicationReassemblyActivity.StartActivity()));
+            var state = rangeIndexAofStreamReassembly.GetOrAdd(keyArr, _ => new StreamReassemblyState(new RangeIndexChunkedDeserializer(DeriveTempMigrationPath(), logger), RangeIndexReplicationReassemblyActivity.StartActivity()));
             var deserializer = state.deserializer;
             state.activity.OnChunkReceived(chunk.Length);
 
@@ -344,45 +359,40 @@ namespace Garnet.server
 
             if (deserializer.IsComplete)
             {
+                // TODO(RangeIndex): Propagate replaceOption in the migrated stream
                 var publishResult = PublishMigratedIndex(deserializer.Key, deserializer.Stub, deserializer.TempPath, replaceOption: false, ref session.stringBasicContext, session.functionsState.appendOnlyFile);
                 state.activity.OnPublishResult(publishResult);
 
                 if (publishResult == PublishMigratedIndexResult.Failed)
                     logger?.LogError("HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay for key {key}", Encoding.UTF8.GetString(key));
 
-                RemoveAndDisposeStreamReassembly(keyArr, publishResult == PublishMigratedIndexResult.Failed ? "PublishFailed" : "Completed");
+                RemoveAndDisposeStreamReassembly(keyArr,  "Complete");
                 return;
             }
 
             if (isLast)
             {
-                // Final-chunk flag set but the deserializer did not reach completion — the stream is
-                // malformed/truncated. Drop the partial state.
+                // Final-chunk flag set but the deserializer did not reach completion — the stream is malformed/truncated. Drop the partial state.
                 logger?.LogError("HandleRangeIndexStreamReplay: final range index stream chunk flag set but stream is incomplete for key {key}", Encoding.UTF8.GetString(key));
                 RemoveAndDisposeStreamReassembly(keyArr, "FinalChunkButDeserializerIncomplete");
             }
         }
 
         /// <summary>
-        /// Dispose and drop any in-progress AOF-stream reassembly state. Called at the end of an AOF
-        /// replay / recovery pass so a stream that was truncated mid-flight (e.g. a crash between
-        /// chunks) does not leak its temp file or deserializer.
+        /// Dispose and drop any in-progress AOF tream reassembly state - called on disposal.
         /// </summary>
-        internal void CleanupIncompleteStreamReassembly()
+        internal void DisposeIncompleteStreamReassembly()
         {
-            // Runs from AofProcessor.Dispose after all replay tasks have finished, so there are no
-            // concurrent writers. Iterate the ConcurrentDictionary.Keys snapshot (a copy) so removal
-            // during the loop is safe regardless.
-            foreach (var key in streamReassembly.Keys)
+            foreach (var key in rangeIndexAofStreamReassembly.Keys)
             {
-                logger?.LogWarning("CleanupIncompleteStreamReassembly: discarding incomplete range index stream reassembly for key {key}", Encoding.UTF8.GetString(key));
-                RemoveAndDisposeStreamReassembly(key, "incomplete at end of replay");
+                logger?.LogWarning("DisposeIncompleteStreamReassembly: discarding incomplete range index stream reassembly for key {key}", Encoding.UTF8.GetString(key));
+                RemoveAndDisposeStreamReassembly(key, "CleanupIncomplete");
             }
         }
 
         private void RemoveAndDisposeStreamReassembly(byte[] key, string reason)
         {
-            if (streamReassembly.TryRemove(key, out var state))
+            if (rangeIndexAofStreamReassembly.TryRemove(key, out var state))
             {
                 state.activity.EndAndLog(logger, key, reason);
                 state.deserializer.Dispose();

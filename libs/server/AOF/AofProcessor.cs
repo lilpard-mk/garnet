@@ -154,7 +154,7 @@ namespace Garnet.server
         {
             activeVectorManager?.WaitForVectorOperationsToComplete();
             activeVectorManager?.ShutdownReplayTasks();
-            activeRangeIndexManager?.CleanupIncompleteStreamReassembly();
+            activeRangeIndexManager?.DisposeIncompleteStreamReassembly();
             aofReplayCoordinator?.Dispose();
         }
 
