@@ -226,7 +226,7 @@ namespace Garnet.server
                 return;
             }
 
-            var streamActivity = RangeIndexReplicationStreamActivity.StartActivity();
+            var streamActivity = RangeIndexReplicationStreamActivity.StartActivity(chunkSize);
             try
             {
                 chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);

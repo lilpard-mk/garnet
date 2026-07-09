@@ -17,14 +17,19 @@ namespace Garnet.server
     internal sealed class RangeIndexReplicationStreamActivity
     {
         private readonly long timestampStart;
+        private readonly int chunkSize;
         private long fileSizeBytes;
         private int chunkCount;
         private long totalBytesEnqueued;
         private string error;
 
-        private RangeIndexReplicationStreamActivity() => timestampStart = Stopwatch.GetTimestamp();
+        private RangeIndexReplicationStreamActivity(int chunkSize)
+        {
+            timestampStart = Stopwatch.GetTimestamp();
+            this.chunkSize = chunkSize;
+        }
 
-        internal static RangeIndexReplicationStreamActivity StartActivity() => new();
+        internal static RangeIndexReplicationStreamActivity StartActivity(int chunkSize) => new(chunkSize);
 
         internal void OnFileLength(long fileBytes) => fileSizeBytes = fileBytes;
 
@@ -42,8 +47,8 @@ namespace Garnet.server
                 return;
 
             var totalTicks = Stopwatch.GetElapsedTime(timestampStart).Ticks;
-            logger.LogInformation("RangeIndexReplicationStreamActivity: key={key} isError={isError} errorStr={errorStr} fileSizeBytes={fileSizeBytes} chunkCount={chunkCount} totalBytesEnqueued={totalBytesEnqueued} totalTicks={totalTicks}",
-                Encoding.UTF8.GetString(key), error != null, error, fileSizeBytes, chunkCount, totalBytesEnqueued, totalTicks);
+            logger.LogInformation("RangeIndexReplicationStreamActivity: key={key} isError={isError} errorStr={errorStr} chunkSize={chunkSize} fileSizeBytes={fileSizeBytes} chunkCount={chunkCount} totalBytesEnqueued={totalBytesEnqueued} totalTicks={totalTicks}",
+                Encoding.UTF8.GetString(key), error != null, error, chunkSize, fileSizeBytes, chunkCount, totalBytesEnqueued, totalTicks);
         }
     }
 }
