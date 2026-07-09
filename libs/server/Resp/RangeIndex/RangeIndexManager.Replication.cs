@@ -41,14 +41,11 @@ namespace Garnet.server
         private int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize;
 
         /// <summary>
-        /// Test-only override for <see cref="rangeIndexAofStreamChunkSize"/>. Forces a small chunk size so a
-        /// migrated index's serialized file spans many <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF
-        /// entries, exercising the chunked replicate/reassemble path. Not reachable from server configuration.
+        /// Test-only override for <see cref="rangeIndexAofStreamChunkSize"/> (must be at least
+        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>). Forces a small chunk size so a migrated
+        /// index's serialized file spans many <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entries,
+        /// exercising the chunked replicate/reassemble path. Not reachable from server configuration.
         /// </summary>
-        /// <param name="chunkSize">Chunk size in bytes; must be at least
-        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="chunkSize"/> is below the
-        /// minimum supported chunk size.</exception>
         internal void SetAofStreamChunkSizeForTesting(int chunkSize)
         {
             if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
