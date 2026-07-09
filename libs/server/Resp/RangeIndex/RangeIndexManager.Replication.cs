@@ -227,6 +227,7 @@ namespace Garnet.server
             }
 
             var streamActivity = RangeIndexReplicationActivities.StreamActivity.StartActivity(chunkSize);
+            byte[] destBuffer = null;
             try
             {
                 chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);
@@ -241,32 +242,26 @@ namespace Garnet.server
                 // FileStream but does NOT delete the snapshot: PublishMigratedIndex moves it into place after
                 // streaming completes.
                 using var reader = new RangeIndexMigrationReader(serializer, fs, tempFilePath: null, chunkSize, logger);
-                var destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
-                try
+                destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+
+                var isFirst = true;
+                while (!reader.IsComplete)
                 {
-                    var isFirst = true;
-                    while (!reader.IsComplete)
+                    var written = reader.ReadNextChunk(destBuffer.AsSpan(0, chunkSize));
+
+                    // ReadNextChunk always makes progress while the stream is incomplete (it returns 0
+                    // only when already complete, which the loop guard prevents). A zero here means the
+                    // reader's contract was violated — record it and surface it instead of spinning.
+                    if (written == 0)
                     {
-                        var written = reader.ReadNextChunk(destBuffer.AsSpan(0, chunkSize));
-
-                        // ReadNextChunk always makes progress while the stream is incomplete (it returns 0
-                        // only when already complete, which the loop guard prevents). A zero here means the
-                        // reader's contract was violated — record it and surface it instead of spinning.
-                        if (written == 0)
-                        {
-                            streamActivity.OnError("Zero-length chunk from reader");
-                            logger?.LogError("ReplicateRangeIndexStream: reader returned zero-length chunk with a {Size}-byte buffer while the stream is incomplete for key {key}", chunkSize, Encoding.UTF8.GetString(key));
-                            throw new GarnetException("ReplicateRangeIndexStream: reader returned zero-length chunk while the stream is incomplete");
-                        }
-
-                        EnqueueRangeIndexStreamChunk(appendOnlyFile, version, sessionId, key, destBuffer.AsSpan(0, written), isFirst, reader.IsComplete);
-                        streamActivity.OnChunkEnqueued(written);
-                        isFirst = false;
+                        streamActivity.OnError("Zero-length chunk from reader");
+                        logger?.LogError("ReplicateRangeIndexStream: reader returned zero-length chunk with a {Size}-byte buffer while the stream is incomplete for key {key}", chunkSize, Encoding.UTF8.GetString(key));
+                        throw new GarnetException("ReplicateRangeIndexStream: reader returned zero-length chunk while the stream is incomplete");
                     }
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(destBuffer);
+
+                    EnqueueRangeIndexStreamChunk(appendOnlyFile, version, sessionId, key, destBuffer.AsSpan(0, written), isFirst, reader.IsComplete);
+                    streamActivity.OnChunkEnqueued(written);
+                    isFirst = false;
                 }
             }
             catch (Exception ex)
@@ -276,6 +271,8 @@ namespace Garnet.server
             }
             finally
             {
+                if (destBuffer != null)
+                    ArrayPool<byte>.Shared.Return(destBuffer);
                 streamActivity.EndAndLog(logger, key);
             }
         }
