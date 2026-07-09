@@ -229,19 +229,7 @@ namespace Garnet.server
             var streamActivity = RangeIndexReplicationStreamActivity.StartActivity();
             try
             {
-                // Cap the chunk so each AOF entry (chunk payload + per-key framing) fits within one AOF
-                // page. The exact overhead is obtained from the log itself (GetMaxAofEntryOverhead), so it
-                // stays correct for the actual key length and if the AOF framing ever changes.
-                var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-                var perEntryOverhead = appendOnlyFile.Log.GetMaxAofEntryOverhead(key.Length, ChunkStringInputFramingBytes());
-                var maxChunkForPage = (int)(pageBytes - perEntryOverhead);
-                if (maxChunkForPage < RangeIndexChunkedSerializer.MinChunkSize)
-                    throw new GarnetException($"AOF page ({pageBytes} bytes) is too small to stream a migrated RangeIndex with a {key.Length}-byte key");
-                if (chunkSize > maxChunkForPage)
-                    chunkSize = maxChunkForPage;
-
-                if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
-                    chunkSize = RangeIndexChunkedSerializer.MinChunkSize;
+                chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);
 
                 var fileLen = new FileInfo(filePath).Length;
                 streamActivity.OnFileLength(fileLen);
@@ -290,6 +278,29 @@ namespace Garnet.server
             {
                 streamActivity.EndAndLog(logger, key);
             }
+        }
+
+        /// <summary>
+        /// Clamp <paramref name="chunkSize"/> so each AOF entry (chunk payload + per-key framing) fits
+        /// within one AOF page, and no smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.
+        /// The per-entry overhead is obtained from the log itself (<c>GetMaxAofEntryOverhead</c>), so it
+        /// stays correct for the actual key length and if the AOF framing ever changes. Throws when the
+        /// page cannot even hold the minimum chunk plus overhead.
+        /// </summary>
+        private static int ClampChunkSizeToAofPage(GarnetAppendOnlyFile appendOnlyFile, ReadOnlySpan<byte> key, int chunkSize)
+        {
+            var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
+            var perEntryOverhead = appendOnlyFile.Log.GetMaxAofEntryOverhead(key.Length, ChunkStringInputFramingBytes());
+            var maxChunkForPage = (int)(pageBytes - perEntryOverhead);
+            if (maxChunkForPage < RangeIndexChunkedSerializer.MinChunkSize)
+                throw new GarnetException($"AOF page ({pageBytes} bytes) is too small to stream a migrated RangeIndex with a {key.Length}-byte key");
+
+            if (chunkSize > maxChunkForPage)
+                chunkSize = maxChunkForPage;
+            if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
+                chunkSize = RangeIndexChunkedSerializer.MinChunkSize;
+
+            return chunkSize;
         }
 
         /// <summary>
