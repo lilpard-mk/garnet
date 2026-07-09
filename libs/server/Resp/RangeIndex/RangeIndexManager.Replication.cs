@@ -33,6 +33,31 @@ namespace Garnet.server
         private const long StreamChunkIsFirstFlag = 2L;
 
         /// <summary>
+        /// Max size (bytes) of each <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to
+        /// replicate a migrated index. Production always uses <see cref="DefaultMigrationChunkSize"/>; tests
+        /// may override it via <see cref="SetAofStreamChunkSizeForTesting"/> to exercise the multi-chunk path.
+        /// <see cref="ValidateChunkSizeAgainstAofPage"/> guarantees a chunk always fits within one AOF page.
+        /// </summary>
+        private int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize;
+
+        /// <summary>
+        /// Test-only override for <see cref="rangeIndexAofStreamChunkSize"/>. Forces a small chunk size so a
+        /// migrated index's serialized file spans many <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF
+        /// entries, exercising the chunked replicate/reassemble path. Not reachable from server configuration.
+        /// </summary>
+        /// <param name="chunkSize">Chunk size in bytes; must be at least
+        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="chunkSize"/> is below the
+        /// minimum supported chunk size.</exception>
+        internal void SetAofStreamChunkSizeForTesting(int chunkSize)
+        {
+            if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
+                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize,
+                    $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
+            rangeIndexAofStreamChunkSize = chunkSize;
+        }
+
+        /// <summary>
         /// In-progress AOF-stream reassembly state, keyed by RangeIndex key. During migration of a RangeIndex,
         /// the serialized BfTree file is streamed into the AOF as a sequence of chunked <see cref="AofEntryType.RangeIndexStreamChunk"/>.
         /// Replicas replaying the AOF may receive these chunks interleaved with unrelated AOF entries, so we need to track
@@ -226,7 +251,7 @@ namespace Garnet.server
                 return;
             }
 
-            chunkSize = ClampChunkSizeToAofPage(appendOnlyFile, key, chunkSize);
+            ValidateChunkSizeAgainstAofPage(appendOnlyFile, chunkSize);
             var streamActivity = RangeIndexReplicationActivities.StreamActivity.StartActivity(chunkSize);
             byte[] destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
             try
@@ -276,38 +301,22 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Clamp <paramref name="chunkSize"/> so each AOF entry (chunk payload + per-key framing) fits
-        /// within one AOF page, and no smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.
-        /// The per-entry overhead is obtained from the log itself (<c>GetMaxAofEntryOverhead</c>), so it
-        /// stays correct for the actual key length and if the AOF framing ever changes. Throws when the
-        /// page cannot even hold the minimum chunk plus overhead.
+        /// Validate that the AOF page can safely hold a single <see cref="AofEntryType.RangeIndexStreamChunk"/>
+        /// entry for the given chunk size. Requires the page to exceed the chunk payload by at least
+        /// <see cref="DefaultMigrationChunkSize"/> — a margin that dwarfs the real per-entry overhead (record +
+        /// AOF headers + length-prefixed key + <see cref="StringInput"/> framing + alignment), so a chunk can
+        /// never overflow an AOF page regardless of key length or future framing changes. This lets the stream
+        /// path enqueue chunks without any per-entry page-fit accounting. Throws when the margin is not met.
         /// </summary>
-        private static int ClampChunkSizeToAofPage(GarnetAppendOnlyFile appendOnlyFile, ReadOnlySpan<byte> key, int chunkSize)
+        private static void ValidateChunkSizeAgainstAofPage(GarnetAppendOnlyFile appendOnlyFile, int chunkSize)
         {
             var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-            var perEntryOverhead = appendOnlyFile.Log.GetMaxAofEntryOverhead(key.Length, ChunkStringInputFramingBytes());
-            var maxChunkForPage = (int)(pageBytes - perEntryOverhead);
-            if (maxChunkForPage < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new GarnetException($"AOF page ({pageBytes} bytes) is too small to stream a migrated RangeIndex with a {key.Length}-byte key");
-
-            if (chunkSize > maxChunkForPage)
-                chunkSize = maxChunkForPage;
-            if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
-                chunkSize = RangeIndexChunkedSerializer.MinChunkSize;
-
-            return chunkSize;
-        }
-
-        /// <summary>
-        /// Non-payload framing bytes of the <see cref="StringInput"/> that wraps a single stream chunk
-        /// (input header + <c>arg1</c> + parse-state prefixes for one argument), independent of the chunk size.
-        /// </summary>
-        private static int ChunkStringInputFramingBytes()
-        {
-            var parseState = new SessionParseState();
-            parseState.InitializeWithArgument(default); // single zero-length argument
-            var probe = new StringInput(RespCommand.NONE, ref parseState, arg1: 0, flags: RespInputFlags.Deterministic);
-            return probe.SerializedLength; // equals the framing, since the argument payload is empty
+            var requiredPageBytes = (long)chunkSize + DefaultMigrationChunkSize;
+            if (pageBytes < requiredPageBytes)
+                throw new GarnetException(
+                    $"AOF page size ({pageBytes} bytes) must exceed the range index stream chunk size ({chunkSize} bytes) " +
+                    $"by at least {DefaultMigrationChunkSize} bytes (required {requiredPageBytes} bytes) so each chunk fits " +
+                    $"within one AOF page with margin. Increase --aof-page-size or reduce the range index stream chunk size.");
         }
 
         /// <summary>Enqueue a single <see cref="AofEntryType.RangeIndexStreamChunk"/> chunk to the AOF.</summary>

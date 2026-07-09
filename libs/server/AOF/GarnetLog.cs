@@ -79,24 +79,6 @@ namespace Garnet.server
         public int ReplayTaskCount => serverOptions.AofReplayTaskCount;
 
         /// <summary>
-        /// Upper bound on the non-payload bytes of a single AOF entry carrying a key of
-        /// <paramref name="keyLength"/> bytes and an input whose non-payload framing is
-        /// <paramref name="inputFramingBytes"/> bytes. Mirrors the allocation performed by
-        /// <see cref="TsavoriteLog"/>'s <c>Enqueue</c> — record header + AOF entry header +
-        /// length-prefixed key + input framing + 8-byte record alignment — using the larger sharded
-        /// header so the bound holds regardless of log mode. A chunk payload sized as
-        /// <c>AofPageSize - GetMaxAofEntryOverhead(keyLength, framing)</c> is guaranteed to fit one page.
-        /// </summary>
-        public int GetMaxAofEntryOverhead(int keyLength, int inputFramingBytes)
-        {
-            // TsavoriteLog aligns each record body up to the next 8-byte boundary; reserve the max slack.
-            const int recordAlignmentSlack = 7;
-            var keyTotalSize = sizeof(int) + keyLength; // length-prefixed SpanByte key
-            var maxAofHeaderSize = Math.Max(AofHeader.TotalSize, AofShardedHeader.TotalSize);
-            return (int)HeaderSize + maxAofHeaderSize + keyTotalSize + inputFramingBytes + recordAlignmentSlack;
-        }
-
-        /// <summary>
         /// Hash function used for sharded-log
         /// </summary>
         /// <param name="key"></param>

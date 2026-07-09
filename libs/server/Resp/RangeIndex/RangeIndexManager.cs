@@ -109,31 +109,6 @@ namespace Garnet.server
         private readonly string cprDir;
 
         /// <summary>
-        /// Max size (bytes) of each <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to
-        /// replicate a migrated index. Chunk + framing overhead must fit in one AOF page. Production always
-        /// uses <see cref="DefaultMigrationChunkSize"/> (clamped to the AOF page at stream time); tests may
-        /// override it via <see cref="SetAofStreamChunkSizeForTesting"/> to exercise the multi-chunk path.
-        /// </summary>
-        private int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize;
-
-        /// <summary>
-        /// Test-only override for <see cref="rangeIndexAofStreamChunkSize"/>. Forces a small chunk size so a
-        /// migrated index's serialized file spans many <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF
-        /// entries, exercising the chunked replicate/reassemble path. Not reachable from server configuration.
-        /// </summary>
-        /// <param name="chunkSize">Chunk size in bytes; must be at least
-        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="chunkSize"/> is below the
-        /// minimum supported chunk size.</exception>
-        internal void SetAofStreamChunkSizeForTesting(int chunkSize)
-        {
-            if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
-                throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize,
-                    $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
-            rangeIndexAofStreamChunkSize = chunkSize;
-        }
-
-        /// <summary>
         /// Global checkpoint barrier. When non-zero, a checkpoint is snapshotting trees.
         /// RI operations check this first (one volatile read on hot path); if set, they
         /// look up by <see cref="KeyId"/> and check the per-tree
