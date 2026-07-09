@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
@@ -336,7 +337,7 @@ namespace Garnet.server
 
             if (!deserializer.ProcessChunk(chunk) || deserializer.HasError)
             {
-                logger?.LogError("HandleRangeIndexStreamReplay: failed to process range index stream chunk. ");
+                logger?.LogError("HandleRangeIndexStreamReplay: failed to process range index stream chunk for key {key}", Encoding.UTF8.GetString(key));
                 RemoveAndDisposeStreamReassembly(keyArr, "ChunkProcessingError");
                 return;
             }
@@ -347,7 +348,7 @@ namespace Garnet.server
                 state.activity.OnPublishResult(publishResult);
 
                 if (publishResult == PublishMigratedIndexResult.Failed)
-                    logger?.LogError("HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay");
+                    logger?.LogError("HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay for key {key}", Encoding.UTF8.GetString(key));
 
                 RemoveAndDisposeStreamReassembly(keyArr, publishResult == PublishMigratedIndexResult.Failed ? "PublishFailed" : "Completed");
                 return;
@@ -357,8 +358,8 @@ namespace Garnet.server
             {
                 // Final-chunk flag set but the deserializer did not reach completion — the stream is
                 // malformed/truncated. Drop the partial state.
-                logger?.LogError("HandleRangeIndexStreamReplay: final range index stream chunk flag set but stream is incomplete for key");
-                RemoveAndDisposeStreamReassembly(keyArr, "final chunk but stream incomplete");
+                logger?.LogError("HandleRangeIndexStreamReplay: final range index stream chunk flag set but stream is incomplete for key {key}", Encoding.UTF8.GetString(key));
+                RemoveAndDisposeStreamReassembly(keyArr, "FinalChunkButDeserializerIncomplete");
             }
         }
 
@@ -374,7 +375,7 @@ namespace Garnet.server
             // during the loop is safe regardless.
             foreach (var key in streamReassembly.Keys)
             {
-                logger?.LogWarning("CleanupIncompleteStreamReassembly: discarding incomplete range index stream reassembly for a key");
+                logger?.LogWarning("CleanupIncompleteStreamReassembly: discarding incomplete range index stream reassembly for key {key}", Encoding.UTF8.GetString(key));
                 RemoveAndDisposeStreamReassembly(key, "incomplete at end of replay");
             }
         }
