@@ -410,7 +410,7 @@ namespace Garnet.test.cluster
         public void SetRangeIndexStreamChunkSizeOnAllNodes(int chunkSize)
         {
             foreach (var node in nodes)
-                node?.Provider?.StoreWrapper?.DefaultDatabase?.RangeIndexManager?.SetAofStreamChunkSizeForTesting(chunkSize);
+                node?.Provider?.StoreWrapper?.DefaultDatabase?.RangeIndexManager?.SetAofStreamChunkSize(chunkSize);
         }
 
         /// <summary>

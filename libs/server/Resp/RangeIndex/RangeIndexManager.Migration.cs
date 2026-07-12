@@ -151,11 +151,13 @@ namespace Garnet.server
             {
                 var bftreeDataPath = LogDataPathFor(keyBytes);
 
+                // TODO(RI): Acquire Checkpoint lock to prevent a concurrent checkpoint from deleting the
+                // RangeIndexStream chunks added to the AOF before the BFTree is created
+
                 // Replicate the migrated BfTree to secondaries by streaming the snapshot file into
                 // the AOF as chunked range index stream entries. This must happen while tempPath is still
                 // intact (before the move below). On replay, HandleRangeIndexStreamReplay reassembles
-                // the file and re-invokes this method. No-op when AOF is disabled (appendOnlyFile null),
-                // which includes the replica/recovery replay path (recordToAof:false).
+                // the file and re-invokes this method.
                 ReplicateRangeIndexStream(keyBytes, stubBytes, tempPath, appendOnlyFile, ctx.Session.Version, ctx.Session.ID, rangeIndexAofStreamChunkSize);
 
                 // TODO(RI): The KeyExists check above is not race-free. The destination slot is in

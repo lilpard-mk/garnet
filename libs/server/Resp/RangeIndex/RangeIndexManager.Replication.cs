@@ -34,19 +34,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Max size (bytes) of each <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entry used to
-        /// replicate a migrated index. Production always uses <see cref="DefaultMigrationChunkSize"/>; tests
-        /// may override it via <see cref="SetAofStreamChunkSizeForTesting"/> to exercise the multi-chunk path.
-        /// <see cref="ValidateChunkSizeAgainstAofPage"/> guarantees a chunk always fits within one AOF page.
+        /// replicate a migrated index. Tests may override it to exercise the multi-chunk path.
         /// </summary>
         private int rangeIndexAofStreamChunkSize = DefaultMigrationChunkSize;
 
-        /// <summary>
-        /// Test-only override for <see cref="rangeIndexAofStreamChunkSize"/> (must be at least
-        /// <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>). Forces a small chunk size so a migrated
-        /// index's serialized file spans many <see cref="AofEntryType.RangeIndexStreamChunk"/> AOF entries,
-        /// exercising the chunked replicate/reassemble path. Not reachable from server configuration.
-        /// </summary>
-        internal void SetAofStreamChunkSizeForTesting(int chunkSize)
+        internal void SetAofStreamChunkSize(int chunkSize)
         {
             if (chunkSize < RangeIndexChunkedSerializer.MinChunkSize)
                 throw new ArgumentOutOfRangeException(nameof(chunkSize), chunkSize, $"Range index AOF stream chunk size must be at least {RangeIndexChunkedSerializer.MinChunkSize} bytes.");
@@ -61,7 +53,7 @@ namespace Garnet.server
         /// </summary>
         private readonly ConcurrentDictionary<byte[], StreamReassemblyState> rangeIndexAofStreamReassembly = new(ByteArrayComparer.Instance);
 
-        /// <summary>Number of in-progress per-key range index stream reassemblies (test visibility).</summary>
+        /// <summary>Number of in-progress per-key range index stream reassemblies.</summary>
         internal int PendingStreamReassemblyCount => rangeIndexAofStreamReassembly.Count;
 
         /// <summary>
@@ -242,7 +234,8 @@ namespace Garnet.server
         internal void ReplicateRangeIndexStream(ReadOnlySpan<byte> key, ReadOnlySpan<byte> stub, string filePath,
             GarnetAppendOnlyFile appendOnlyFile, long version, int sessionId, int chunkSize)
         {
-            if (appendOnlyFile == null) {
+            if (appendOnlyFile == null)
+            {
                 logger?.LogWarning("ReplicateRangeIndexStream called with null appendOnlyFile");
                 return;
             }
@@ -374,7 +367,7 @@ namespace Garnet.server
                 if (publishResult == PublishMigratedIndexResult.Failed)
                     logger?.LogError("HandleRangeIndexStreamReplay: PublishMigratedIndex failed during AOF replay for key {key}", Encoding.UTF8.GetString(key));
 
-                RemoveAndDisposeStreamReassembly(keyArr,  "Complete");
+                RemoveAndDisposeStreamReassembly(keyArr, "Complete");
                 return;
             }
 
