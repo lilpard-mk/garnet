@@ -2835,11 +2835,12 @@ it from the stub alone (that would yield an empty tree). Instead, `PublishMigrat
 the reassembled BfTree file into the AOF as a sequence of chunked **`RangeIndexStreamChunk`**
 entries (`RangeIndexManager.ReplicateRangeIndexStream`), reusing `RangeIndexChunkedSerializer` for
 framing. Because a BfTree file can exceed a single AOF page, the stream is split into chunks no
-larger than `RangeIndexManager.DefaultMigrationChunkSize` (256 KB). `ValidateChunkSizeAgainstAofPage`
-requires the `AofPageSize` to exceed the chunk size by at least another `DefaultMigrationChunkSize`,
-a margin that dwarfs the real per-entry framing/overhead — so a chunk always fits in one AOF page and
-the stream path needs no per-entry page-fit accounting. The chunk size is a fixed internal default
-(tests may override it via `RangeIndexManager.SetAofStreamChunkSizeForTesting` to exercise the
+larger than `RangeIndexManager.DefaultMigrationChunkSize` (256 KB). At startup (when the database's AOF
+is wired up), `RangeIndexManager.ValidateAofPageCompatibility` requires the `AofPageSize` to exceed the
+chunk size by at least another `DefaultMigrationChunkSize` — a margin that dwarfs the real per-entry
+framing/overhead — so a misconfigured (too-small) AOF page fails fast at startup, a chunk always fits in
+one AOF page, and the stream path needs no per-entry page-fit accounting. The chunk size is a fixed
+internal default (tests may override it via `RangeIndexManager.SetAofStreamChunkSize` to exercise the
 multi-chunk path); it is not a server configuration option. Each
 chunk is one `RangeIndexStreamChunk` AOF entry keyed by the RI key; `arg1` packs two flags — the
 first chunk of a stream and the final chunk.

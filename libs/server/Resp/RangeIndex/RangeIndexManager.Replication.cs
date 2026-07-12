@@ -240,7 +240,6 @@ namespace Garnet.server
                 return;
             }
 
-            ValidateChunkSizeAgainstAofPage(appendOnlyFile, chunkSize);
             var streamActivity = RangeIndexReplicationActivities.StreamActivity.StartActivity(chunkSize);
             byte[] destBuffer = ArrayPool<byte>.Shared.Rent(chunkSize);
             try
@@ -290,19 +289,24 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Validate that the AOF page can safely hold a single <see cref="AofEntryType.RangeIndexStreamChunk"/>
-        /// entry for the given chunk size. Requires the page to exceed the chunk payload by at least
-        /// <see cref="DefaultMigrationChunkSize"/> — a margin that dwarfs the real per-entry overhead (record +
-        /// AOF headers + length-prefixed key + <see cref="StringInput"/> framing + alignment), so a chunk can
-        /// never overflow an AOF page regardless of key length or future framing changes. This lets the stream
-        /// path enqueue chunks without any per-entry page-fit accounting. Throws when the margin is not met.
+        /// Startup validation: ensure the AOF page is large enough to safely hold a single
+        /// <see cref="AofEntryType.RangeIndexStreamChunk"/> entry — the current stream chunk size plus a
+        /// <see cref="DefaultMigrationChunkSize"/> safety margin that dwarfs the real per-entry overhead
+        /// (record + AOF headers + length-prefixed key + <see cref="StringInput"/> framing + alignment), so a
+        /// chunk can never overflow an AOF page regardless of key length or future framing changes. Called once
+        /// when the database's AOF is wired up so a too-small AOF page fails fast at startup rather than at the
+        /// first migration; the stream path then enqueues chunks with no per-entry page-fit accounting. No-op
+        /// when AOF is disabled. Throws when the margin is not met.
         /// </summary>
-        private static void ValidateChunkSizeAgainstAofPage(GarnetAppendOnlyFile appendOnlyFile, int chunkSize)
+        public void ValidateAofPageCompatibility(GarnetAppendOnlyFile appendOnlyFile)
         {
+            if (appendOnlyFile == null)
+                return;
+
             var pageBytes = 1L << appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
-            var requiredPageBytes = (long)chunkSize + DefaultMigrationChunkSize;
+            var requiredPageBytes = (long)rangeIndexAofStreamChunkSize + DefaultMigrationChunkSize;
             if (pageBytes < requiredPageBytes)
-                throw new GarnetException($"AOF page size ({pageBytes} bytes) is too small for range index stream chunk size {chunkSize}; needs at least {requiredPageBytes} bytes. Increase --aof-page-size.");
+                throw new GarnetException($"AOF page size ({pageBytes} bytes) is too small for range index stream chunk size {rangeIndexAofStreamChunkSize}; needs at least {requiredPageBytes} bytes. Increase --aof-page-size.");
         }
 
         /// <summary>Enqueue a single <see cref="AofEntryType.RangeIndexStreamChunk"/> chunk to the AOF.</summary>
