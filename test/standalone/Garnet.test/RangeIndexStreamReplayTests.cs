@@ -13,9 +13,6 @@ namespace Garnet.test
 {
     /// <summary>
     /// Unit tests for the AOF-replay reassembly bookkeeping in <see cref="RangeIndexManager"/>
-    /// (<c>ProcessStreamChunk</c> / <c>CleanupIncompleteStreamReassembly</c>): a stream's first chunk
-    /// must reset stale per-key state (so a retry after a failed/partial stream reassembles cleanly),
-    /// incomplete reassemblies must be cleaned up, and malformed chunks must be dropped.
     /// </summary>
     [TestFixture]
     public class RangeIndexStreamReplayTests : TestBase
@@ -54,37 +51,20 @@ namespace Garnet.test
             return b;
         }
 
-        /// <summary>Frame a full stream into (chunk, isFirst, isLast) tuples, mirroring ReplicateRangeIndexStream.</summary>
+        /// <summary>Frame a full stream into (chunk, isFirst, isLast) tuples via the production
+        /// <see cref="RangeIndexMigrationReader"/> (over an in-memory stream), mirroring ReplicateRangeIndexStream.</summary>
         private static List<(byte[] Chunk, bool IsFirst, bool IsLast)> BuildStreamChunks(byte[] key, byte[] stub, byte[] fileData, int chunkSize)
         {
             var serializer = new RangeIndexChunkedSerializer(key, stub, fileData.Length);
+            using var reader = new RangeIndexMigrationReader(serializer, new MemoryStream(fileData), tempFilePath: null);
             var result = new List<(byte[], bool, bool)>();
             var dest = new byte[chunkSize];
-            var fileOffset = 0;
             var isFirst = true;
 
-            while (!serializer.IsComplete)
+            while (!reader.IsComplete)
             {
-                var written = 0;
-                while (!serializer.IsComplete && written < chunkSize)
-                {
-                    if (serializer.NeedsFileData)
-                    {
-                        var take = Math.Min(chunkSize, fileData.Length - fileOffset);
-                        serializer.SupplyFileData(fileData.AsMemory(fileOffset, take));
-                        fileOffset += take;
-                    }
-
-                    var n = serializer.MoveNext(dest.AsSpan(written, chunkSize - written));
-                    if (n == 0)
-                        break;
-                    written += n;
-                }
-
-                if (written == 0)
-                    continue;
-
-                result.Add((dest.AsSpan(0, written).ToArray(), isFirst, serializer.IsComplete));
+                var written = reader.ReadNextChunk(dest);
+                result.Add((dest.AsSpan(0, written).ToArray(), isFirst, reader.IsComplete));
                 isFirst = false;
             }
 

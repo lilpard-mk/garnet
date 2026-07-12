@@ -16,7 +16,7 @@ namespace Garnet.server
     public sealed class RangeIndexMigrationReader : IDisposable
     {
         private readonly RangeIndexChunkedSerializer serializer;
-        private FileStream fileStream;
+        private Stream stream;
         private readonly string tempFilePath;
         private readonly ILogger logger;
         private readonly Memory<byte> readBuffer;
@@ -37,22 +37,24 @@ namespace Garnet.server
         public const int DefaultFileReadBufferSize = 1 << 20; // 1 MiB
 
         /// <summary>
-        /// Create a migration reader that wraps a serializer and file stream. On dispose,
-        /// the underlying <paramref name="fileStream"/> is closed and <paramref name="tempFilePath"/>
-        /// is deleted (best-effort) so source-side migration snapshots do not accumulate.
+        /// Create a migration reader that wraps a serializer and a data stream. On dispose,
+        /// the underlying <paramref name="stream"/> is closed and <paramref name="tempFilePath"/>
+        /// (when non-null) is deleted (best-effort) so source-side migration snapshots do not accumulate.
         /// </summary>
         /// <param name="serializer">The pure state-machine serializer.</param>
-        /// <param name="fileStream">The file stream to read snapshot data from.</param>
-        /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
+        /// <param name="stream">The stream to read snapshot data from (e.g. a FileStream in production, or a
+        /// MemoryStream in tests).</param>
+        /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.
+        /// Pass null when the stream is not backed by an owned temp file (nothing is deleted).</param>
         /// <param name="logger">Optional logger for delete failures.</param>
-        /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read file data from disk.</param>
-        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, ILogger logger = null, int readBufferSize = DefaultFileReadBufferSize)
+        /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read data from the stream.</param>
+        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, Stream stream, string tempFilePath, ILogger logger = null, int readBufferSize = DefaultFileReadBufferSize)
         {
             if (readBufferSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(readBufferSize), readBufferSize, "readBufferSize must be positive.");
 
             this.serializer = serializer;
-            this.fileStream = fileStream;
+            this.stream = stream;
             this.tempFilePath = tempFilePath;
             this.logger = logger;
             readBuffer = new byte[readBufferSize];
@@ -91,7 +93,7 @@ namespace Garnet.server
                 // Refill the file buffer if the serializer needs file data
                 if (serializer.NeedsFileData)
                 {
-                    var bytesRead = await fileStream.ReadAsync(readBuffer, cancellationToken).ConfigureAwait(false);
+                    var bytesRead = await stream.ReadAsync(readBuffer, cancellationToken).ConfigureAwait(false);
                     SupplyFileDataOrThrow(bytesRead);
                 }
 
@@ -122,7 +124,7 @@ namespace Garnet.server
             {
                 if (serializer.NeedsFileData)
                 {
-                    var bytesRead = fileStream.Read(readBuffer.Span);
+                    var bytesRead = stream.Read(readBuffer.Span);
                     SupplyFileDataOrThrow(bytesRead);
                 }
 
@@ -160,15 +162,15 @@ namespace Garnet.server
 
             try
             {
-                fileStream?.Dispose();
+                stream?.Dispose();
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "RangeIndexMigrationReader: failed to dispose file stream for {Path} (ignored)", tempFilePath);
+                logger?.LogWarning(ex, "RangeIndexMigrationReader: failed to dispose stream for {Path} (ignored)", tempFilePath);
             }
             finally
             {
-                fileStream = null;
+                stream = null;
             }
 
             if (tempFilePath != null)
