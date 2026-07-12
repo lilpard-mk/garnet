@@ -71,10 +71,19 @@ namespace Garnet.test
             return result;
         }
 
+        /// <summary>Assert exactly one reassembly-activity entry was logged with the given reason, and return it.</summary>
+        private static CapturingLogger.Entry AssertSingleReassemblyReason(CapturingLogger capture, string reason)
+        {
+            var matches = capture.EntriesWithField("reason", reason);
+            ClassicAssert.AreEqual(1, matches.Count, $"expected exactly one reassembly-activity log with reason={reason}");
+            return matches[0];
+        }
+
         [Test]
         public void PartialStreamIsPendingThenCleanedUp()
         {
-            using var mgr = new RangeIndexManager(testDir);
+            var capture = new CapturingLogger();
+            using var mgr = new RangeIndexManager(testDir, logger: capture);
             var key = Encoding.UTF8.GetBytes("k1");
             var chunks = BuildStreamChunks(key, MakeStub(), RandomBytes(8192), chunkSize: 512);
             ClassicAssert.Greater(chunks.Count, 2, "test needs a multi-chunk stream");
@@ -86,12 +95,17 @@ namespace Garnet.test
             // End-of-replay cleanup drops the incomplete reassembly (no leak).
             mgr.DisposeIncompleteStreamReassembly();
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
+
+            // The activity confirms WHY the reassembly ended and that it had received exactly the one chunk.
+            var end = AssertSingleReassemblyReason(capture, "CleanupIncomplete");
+            ClassicAssert.AreEqual("1", end.Field("chunkCount"));
         }
 
         [Test]
         public void RetryFirstChunkResetsStalePartialReassembly()
         {
-            using var mgr = new RangeIndexManager(testDir);
+            var capture = new CapturingLogger();
+            using var mgr = new RangeIndexManager(testDir, logger: capture);
             var key = Encoding.UTF8.GetBytes("k1");
             var chunks = BuildStreamChunks(key, MakeStub(), RandomBytes(8192), chunkSize: 512);
             ClassicAssert.Greater(chunks.Count, 3, "test needs a multi-chunk stream");
@@ -111,14 +125,24 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, mgr.PendingStreamReassemblyCount,
                 "retry stream should reassemble cleanly after the first chunk reset the stale partial");
 
+            // The reset is directly observable: the retry's first chunk superseded attempt 1's partial,
+            // which had received exactly one chunk.
+            var superseded = AssertSingleReassemblyReason(capture, "NewStreamReceived");
+            ClassicAssert.AreEqual("1", superseded.Field("chunkCount"));
+
             mgr.DisposeIncompleteStreamReassembly();
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
+
+            // The clean retry reassembly received every chunk except the withheld trailer.
+            var end = AssertSingleReassemblyReason(capture, "CleanupIncomplete");
+            ClassicAssert.AreEqual((chunks.Count - 1).ToString(), end.Field("chunkCount"));
         }
 
         [Test]
         public void MalformedChunkIsDropped()
         {
-            using var mgr = new RangeIndexManager(testDir);
+            var capture = new CapturingLogger();
+            using var mgr = new RangeIndexManager(testDir, logger: capture);
             var key = Encoding.UTF8.GetBytes("k1");
 
             // A first chunk that begins with a non-positive key length is rejected by the deserializer,
@@ -126,12 +150,18 @@ namespace Garnet.test
             var malformed = new byte[16]; // leading 4 bytes = 0 => invalid key length
             mgr.ProcessStreamChunk(session: null, key, malformed, isFirst: true, isLast: false);
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
+
+            // count==0 alone is ambiguous; the activity proves the reassembly was created and then dropped
+            // for the right reason (chunk-processing failure) rather than silently ignored.
+            var end = AssertSingleReassemblyReason(capture, "ChunkProcessingError");
+            ClassicAssert.AreEqual("1", end.Field("chunkCount"));
         }
 
         [Test]
         public void FinalFlagOnIncompleteStreamDropsReassembly()
         {
-            using var mgr = new RangeIndexManager(testDir);
+            var capture = new CapturingLogger();
+            using var mgr = new RangeIndexManager(testDir, logger: capture);
             var key = Encoding.UTF8.GetBytes("k1");
             var chunks = BuildStreamChunks(key, MakeStub(), RandomBytes(8192), chunkSize: 512);
             ClassicAssert.Greater(chunks.Count, 2, "test needs a multi-chunk stream");
@@ -140,6 +170,10 @@ namespace Garnet.test
             // this is a malformed/truncated stream and must be dropped.
             mgr.ProcessStreamChunk(session: null, key, chunks[0].Chunk, isFirst: true, isLast: true);
             ClassicAssert.AreEqual(0, mgr.PendingStreamReassemblyCount);
+
+            // The activity pins the exact drop reason: a final flag on a still-incomplete stream.
+            var end = AssertSingleReassemblyReason(capture, "FinalChunkButDeserializerIncomplete");
+            ClassicAssert.AreEqual("1", end.Field("chunkCount"));
         }
     }
 }
