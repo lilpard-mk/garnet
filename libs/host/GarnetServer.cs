@@ -397,9 +397,11 @@ namespace Garnet
             var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
 
-            // Fail fast at startup if the AOF page can't hold a migrated range index stream chunk (no-op when
-            // the feature or AOF is disabled), rather than surfacing the misconfiguration at the first migration.
-            rangeIndexManager?.ValidateAofPageCompatibility(aof);
+            if (serverOptions.EnableRangeIndexPreview)
+            {
+                // Fail fast at startup if the AOF page can't hold a migrated range index stream chunk (no-op when AOF is disabled).
+                rangeIndexManager.ValidateAofPageCompatibility(aof);
+            }
 
             return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }

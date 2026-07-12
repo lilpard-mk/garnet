@@ -291,12 +291,7 @@ namespace Garnet.server
         /// <summary>
         /// Startup validation: ensure the AOF page is large enough to safely hold a single
         /// <see cref="AofEntryType.RangeIndexStreamChunk"/> entry — the current stream chunk size plus a
-        /// <see cref="DefaultMigrationChunkSize"/> safety margin that dwarfs the real per-entry overhead
-        /// (record + AOF headers + length-prefixed key + <see cref="StringInput"/> framing + alignment), so a
-        /// chunk can never overflow an AOF page regardless of key length or future framing changes. Called once
-        /// when the database's AOF is wired up so a too-small AOF page fails fast at startup rather than at the
-        /// first migration; the stream path then enqueues chunks with no per-entry page-fit accounting. No-op
-        /// when AOF is disabled. Throws when the margin is not met.
+        /// <see cref="DefaultMigrationChunkSize"/> safety margin.
         /// </summary>
         public void ValidateAofPageCompatibility(GarnetAppendOnlyFile appendOnlyFile)
         {

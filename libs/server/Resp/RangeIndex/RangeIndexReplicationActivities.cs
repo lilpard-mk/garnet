@@ -9,18 +9,14 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.server
 {
     /// <summary>
-    /// Groups activity traces collected during RangeIndex AOF replication — the producer side that
-    /// streams a migrated index into the AOF (<see cref="StreamActivity"/>) and the replica/recovery
-    /// side that reassembles it (<see cref="ReassemblyActivity"/>). Mirrors the source-side
-    /// <c>RangeIndexMigrationActivities</c>.
+    /// Groups activity traces collected during RangeIndex AOF replication.
     /// </summary>
     internal static class RangeIndexReplicationActivities
     {
         /// <summary>
         /// Activity trace for streaming one migrated Range Index's snapshot file into the AOF as chunked
-        /// <c>RangeIndexStreamChunk</c> entries (the primary/producer side of AOF replication), mirroring
-        /// the source-side <c>RangeIndexMigrationActivities.TransmitActivity</c>. Started when streaming
-        /// begins and logged (with the key) when it ends, whether it succeeded or threw.
+        /// <c>RangeIndexStreamChunk</c> entries. Started when streaming begins and logged (with the key)
+        /// when it ends, whether it succeeded or threw.
         /// </summary>
         internal sealed class StreamActivity
         {
