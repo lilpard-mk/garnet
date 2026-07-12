@@ -47,10 +47,10 @@ namespace Garnet.server
         /// <param name="logger">Optional logger for delete failures.</param>
         /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read file data from disk.
         /// This is deliberately independent of the destination chunk size passed to
-        /// <see cref="ReadNextChunkAsync"/> — a larger read buffer reduces file-system reads. When
-        /// <c>null</c>, <see cref="DefaultFileReadBufferSize"/> is used. Must be positive when specified.</param>
+        /// <see cref="ReadNextChunkAsync"/> — a larger read buffer reduces file-system reads. Defaults to
+        /// <see cref="DefaultFileReadBufferSize"/>. Must be positive.</param>
         /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="readBufferSize"/> is not positive.</exception>
-        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, ILogger logger = null, int? readBufferSize = null)
+        public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, ILogger logger = null, int readBufferSize = DefaultFileReadBufferSize)
         {
             if (readBufferSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(readBufferSize), readBufferSize, "readBufferSize must be positive.");
@@ -59,7 +59,7 @@ namespace Garnet.server
             this.fileStream = fileStream;
             this.tempFilePath = tempFilePath;
             this.logger = logger;
-            readBuffer = new byte[readBufferSize ?? DefaultFileReadBufferSize];
+            readBuffer = new byte[readBufferSize];
         }
 
         /// <summary>
