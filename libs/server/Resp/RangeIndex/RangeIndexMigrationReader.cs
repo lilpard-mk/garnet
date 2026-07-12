@@ -45,11 +45,7 @@ namespace Garnet.server
         /// <param name="fileStream">The file stream to read snapshot data from.</param>
         /// <param name="tempFilePath">The path of the snapshot file owned by this reader; deleted on dispose.</param>
         /// <param name="logger">Optional logger for delete failures.</param>
-        /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read file data from disk.
-        /// This is deliberately independent of the destination chunk size passed to
-        /// <see cref="ReadNextChunkAsync"/> — a larger read buffer reduces file-system reads. Defaults to
-        /// <see cref="DefaultFileReadBufferSize"/>. Must be positive.</param>
-        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="readBufferSize"/> is not positive.</exception>
+        /// <param name="readBufferSize">Size (bytes) of the internal buffer used to read file data from disk.</param>
         public RangeIndexMigrationReader(RangeIndexChunkedSerializer serializer, FileStream fileStream, string tempFilePath, ILogger logger = null, int readBufferSize = DefaultFileReadBufferSize)
         {
             if (readBufferSize <= 0)
@@ -113,13 +109,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Synchronous counterpart to <see cref="ReadNextChunkAsync"/> for callers that are not on an
-        /// async path (e.g. AOF replication of a migrated index during publish/replay). Shares the
-        /// serializer-framing logic; only the file read is synchronous.
+        /// Synchronous counterpart to <see cref="ReadNextChunkAsync"/> for callers that are not on an async path
         /// </summary>
         /// <param name="destination">Output buffer. Must be at least <see cref="RangeIndexChunkedSerializer.MinChunkSize"/> bytes.</param>
         /// <returns>Number of bytes written to <paramref name="destination"/> (always positive while the stream is incomplete).</returns>
-        /// <exception cref="ArgumentException">Thrown if <paramref name="destination"/> is smaller than <see cref="RangeIndexChunkedSerializer.MinChunkSize"/>.</exception>
         public int ReadNextChunk(Span<byte> destination)
         {
             ValidateDestination(destination.Length);
