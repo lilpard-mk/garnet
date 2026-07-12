@@ -57,10 +57,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Activity trace for reassembling one migrated Range Index's AOF stream on the replica /
-        /// recovery side. Started on the stream's first chunk, accumulated per chunk, and logged (with a
-        /// reason) when the reassembly leaves <c>RangeIndexManager.streamReassembly</c> — on completion,
-        /// publish failure, supersession by a retry, or an incomplete stream dropped at end of replay.
+        /// Activity trace for reassembling one migrated Range Index's AOF stream on the replica / recovery side.
         /// </summary>
         internal sealed class ReassemblyActivity
         {
